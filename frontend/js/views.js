@@ -31,40 +31,39 @@ function viewSummary(){
   </div><div class="activity"><h3>Recent activity</h3><ol>${S.activity.slice(0,6).map(a=>`<li><span class="adot" style="background:${toneColor[a[2]]}"></span><span>${esc(a[1])}</span><span class="when">${ago(a[0])}</span></li>`).join('')}</ol></div></div></section>`;
 }
 
-/* ---------- 2. Network map ---------- */
-function graphLayout(){
-  const order=Object.keys(SPECIALTY_COLORS);
-  const nodes=S.phys.filter(p=>(p.rel!=='outside'||S.showOutside)&&!(p.real&&p.rel==='outside')).sort((a,b)=>order.indexOf(a.spec)-order.indexOf(b.spec)||a.name.localeCompare(b.name));
-  const pos={}, n=nodes.length;
-  nodes.forEach((p,i)=>{ const ang=-Math.PI/2+(i+.5)/n*2*Math.PI; const r={connected:150,joining:198,pending:236,outside:268}[p.rel]; pos[p.id]={x:500+Math.cos(ang)*r*1.45,y:300+Math.sin(ang)*r}; });
-  return {nodes,pos};
-}
+/* ---------- 2. Specialty-clustered connection map ---------- */
 function graphSVG(){
-  const {nodes,pos}=graphLayout();
-  let s=`<svg viewBox="0 0 1000 600" role="img" aria-label="Network map: you in the center, connected physicians around you, colored by specialty. Use the list view for a text version."><defs><filter id="glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter><radialGradient id="vig" cx="50%" cy="50%" r="60%"><stop offset="0%" stop-color="var(--accent)" stop-opacity=".10"/><stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/></radialGradient></defs><rect width="1000" height="600" fill="url(#vig)"/>`;
-  [150,198,236,268].forEach((r,i)=>{ if(i===3&&!S.showOutside) return; s+=`<ellipse cx="500" cy="300" rx="${r*1.45}" ry="${r}" fill="none" stroke="var(--map-line)" stroke-width="1.2"/>`; });
-  nodes.forEach(p=>{ const q=pos[p.id], dim=S.specFilter&&S.specFilter!==p.spec;
-    const dash=p.rel==='pending'?'stroke-dasharray="6 6"':p.rel==='joining'?'stroke-dasharray="2 5"':p.rel==='outside'?'stroke-dasharray="1 7"':'';
-    s+=`<line x1="500" y1="300" x2="${q.x}" y2="${q.y}" stroke="${SPECIALTY_COLORS[p.spec]}" stroke-opacity="${dim?.08:p.rel==='connected'?.45:.35}" stroke-width="${S.mapSel===p.id?2.6:1.5}" ${dash}/>`; });
-  nodes.forEach(p=>{
-    const q=pos[p.id], col=SPECIALTY_COLORS[p.spec], sel=S.mapSel===p.id, dim=S.specFilter&&S.specFilter!==p.spec, sh=sharedPatients(p.id).length;
-    const filled=p.rel==='connected'||p.rel==='joining', r=p.rel==='outside'?10:13;
-    s+=`<g class="gnode" data-action="select" data-id="${p.id}" tabindex="0" role="button" aria-label="${esc(p.name)}, ${esc(p.spec)}, ${relLabel(p.rel)}" opacity="${dim?.22:1}">`;
-    if(sel) s+=`<circle cx="${q.x}" cy="${q.y}" r="${r+8}" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="2"/>`;
-    s+=`<circle class="core" cx="${q.x}" cy="${q.y}" r="${r}" fill="${filled?col:'var(--map-bg)'}" stroke="${col}" stroke-width="${filled?2:2.4}" ${p.rel==='pending'?'stroke-dasharray="4 3"':''} ${filled?'filter="url(#glow)"':''}/>`;
-    if(p.rel==='joining') s+=`<circle cx="${q.x}" cy="${q.y}" r="${r+4}" fill="none" stroke="${col}" stroke-width="1.5" stroke-dasharray="2 3"/>`;
-    if(sh) s+=`<circle cx="${q.x+r-1}" cy="${q.y-r+1}" r="8" fill="var(--raised)" stroke="${col}" stroke-width="1.5"/><text x="${q.x+r-1}" y="${q.y-r+5}" text-anchor="middle" font-size="10.5" font-weight="800" fill="var(--ink)" font-family="Public Sans, sans-serif" pointer-events="none">${sh}</text>`;
-    s+=`<text x="${q.x}" y="${q.y+r+17}" text-anchor="middle" font-size="12" font-weight="${sel?800:600}" fill="${sel?'var(--ink)':'var(--muted)'}" font-family="Public Sans, sans-serif" paint-order="stroke" stroke="var(--map-bg)" stroke-width="4" pointer-events="none">${esc(shortName(p))}</text></g>`;
+  const order=Object.keys(SPECIALTY_COLORS), visible=S.phys.filter(p=>(p.rel!=='outside'||S.showOutside)&&!(p.real&&p.rel==='outside'));
+  const grouped=order.map(spec=>({spec,people:visible.filter(p=>p.spec===spec).sort((a,b)=>a.name.localeCompare(b.name))})).filter(g=>g.people.length);
+  const cx=640,cy=450,boxW=280,boxH=210,positions={};
+  const anchors=[[240,130],[640,125],[1040,130],[1050,345],[1050,555],[1040,770],[640,775],[240,770],[230,555],[230,345]];
+  grouped.forEach((g,i)=>{[g.x,g.y]=anchors[i%anchors.length];const cols=Math.min(2,g.people.length);g.people.forEach((p,j)=>{const row=Math.floor(j/2),rowCount=Math.min(2,g.people.length-row*2),col=j%2,x=g.x+(rowCount===1?0:col===0?-64:64);positions[p.id]={x,y:g.y-15+row*60};});});
+  let s=`<svg viewBox="0 0 1280 900" role="img" aria-label="Connection map with you in the center and physicians in separated specialty groups around you"><rect width="1280" height="900" fill="var(--map-bg)"/>`;
+  grouped.forEach(g=>{const dx=g.x-cx,dy=g.y-cy,l=Math.hypot(dx,dy)||1,nx=dx/l,ny=dy/l,edge=Math.min(nx?boxW/2/Math.abs(nx):Infinity,ny?boxH/2/Math.abs(ny):Infinity),entry={x:g.x-nx*edge,y:g.y-ny*edge};g.entry=entry;const dim=S.specFilter&&S.specFilter!==g.spec,opacity=dim?.08:.6;
+    s+=`<line x1="${cx}" y1="${cy}" x2="${entry.x}" y2="${entry.y}" stroke="${SPECIALTY_COLORS[g.spec]}" stroke-opacity="${opacity}" stroke-width="2.5"/>`;
   });
-  s+=`<circle cx="500" cy="300" r="26" fill="var(--accent)" filter="url(#glow)"/><text x="500" y="305" text-anchor="middle" font-size="14" font-weight="800" fill="#0A1224" font-family="Public Sans, sans-serif">You</text>`;
-  return s+'</svg>';
+  grouped.forEach(g=>{const col=SPECIALTY_COLORS[g.spec],dim=S.specFilter&&S.specFilter!==g.spec,opacity=dim?.24:1;
+    s+=`<rect class="specialty-card" x="${g.x-boxW/2}" y="${g.y-boxH/2}" width="${boxW}" height="${boxH}" rx="18" fill="var(--surface)" stroke="${col}" stroke-width="2.5" opacity="${opacity}"/>`;
+    s+=`<rect x="${g.x-boxW/2}" y="${g.y-boxH/2}" width="${boxW}" height="48" rx="17" fill="${col}" fill-opacity=".2"/><path d="M ${g.x-boxW/2} ${g.y-boxH/2+48} H ${g.x+boxW/2}" stroke="${col}" stroke-opacity=".6"/>`;
+    s+=`<circle cx="${g.x-boxW/2+21}" cy="${g.y-boxH/2+24}" r="7" fill="${col}"/><text x="${g.x-boxW/2+39}" y="${g.y-boxH/2+30}" fill="var(--ink)" font-size="18" font-weight="750" font-family="Public Sans, sans-serif">${esc(g.spec)}</text><text x="${g.x+boxW/2-16}" y="${g.y-boxH/2+29}" text-anchor="end" fill="var(--muted)" font-size="14" font-family="Public Sans, sans-serif">${g.people.length}</text>`;
+    g.people.forEach((p,j)=>{const q=positions[p.id],col=SPECIALTY_COLORS[p.spec],selected=S.mapSel===p.id,filled=p.rel==='connected'||p.rel==='joining';
+      s+=`<line x1="${g.x}" y1="${g.y-28}" x2="${q.x}" y2="${q.y}" stroke="${col}" stroke-opacity=".5" stroke-width="2.5"/>`;
+      s+=`<g class="gnode ${selected?'selected':''}" data-action="select" data-id="${p.id}" tabindex="0" role="button" aria-label="${esc(p.name)}, ${esc(p.spec)}, ${relLabel(p.rel)}">`;
+      if(selected)s+=`<circle cx="${q.x}" cy="${q.y}" r="29" fill="none" stroke="var(--ink)" stroke-width="3"/>`;
+      s+=`<circle class="core ${p.rel}" cx="${q.x}" cy="${q.y}" r="21" fill="${filled?col:'var(--map-bg)'}" stroke="${col}" stroke-width="3.5" ${p.rel==='pending'||p.rel==='outside'?'stroke-dasharray="6 4"':''}/>`;
+      if(p.rel==='joining')s+=`<circle cx="${q.x}" cy="${q.y}" r="26" fill="none" stroke="${col}" stroke-width="2.5" stroke-dasharray="3 3"/>`;
+      if(sharedPatients(p.id).length)s+=`<circle cx="${q.x+17}" cy="${q.y-17}" r="10" fill="var(--raised)" stroke="${col}" stroke-width="1.5"/><text x="${q.x+17}" y="${q.y-13}" text-anchor="middle" font-size="11" font-weight="800" fill="var(--ink)" font-family="Public Sans, sans-serif">${sharedPatients(p.id).length}</text>`;
+      s+=`<text x="${q.x}" y="${q.y+37}" text-anchor="middle" font-size="15" font-weight="${selected?800:650}" fill="var(--ink)" font-family="Public Sans, sans-serif">${esc(shortName(p))}</text><title>${esc(p.name)} · ${esc(relLabel(p.rel))}</title></g>`;
+    });
+  });
+  s+=`<circle cx="${cx}" cy="${cy}" r="52" fill="var(--accent)" opacity=".12"/><circle cx="${cx}" cy="${cy}" r="36" fill="var(--accent)" stroke="var(--map-bg)" stroke-width="5"/><text x="${cx}" y="${cy+6}" text-anchor="middle" font-size="16" font-weight="800" fill="var(--accent-ink)" font-family="Public Sans, sans-serif">You</text></svg>`;
+  return s;
 }
 function viewNetwork(){
-  const specsShown=[...new Set(S.phys.filter(p=>(p.rel!=='outside'||S.showOutside)&&!(p.real&&p.rel==='outside')).map(p=>p.spec))];
   const realCount=S.phys.filter(p=>p.real).length;
   let h=`<section class="section" aria-labelledby="h-net"><div class="section-head"><h2 id="h-net">Network map</h2><div class="nettools"><div class="seg small" role="group" aria-label="Map or list"><button data-action="mapview" data-v="map" aria-pressed="${S.mapView==='map'}">Map</button><button data-action="mapview" data-v="list" aria-pressed="${S.mapView==='list'}">List</button></div><label class="meta" style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-bind="outside" ${S.showOutside?'checked':''}> Show recommended physicians outside your network</label></div></div>${realCount?`<p class="note" style="margin:-4px 0 12px">${realCount} real Atlanta-area clinicians from the NPI Registry are available for recommendations. They appear in the list view and in each action's results.</p>`:''}<div class="netwrap"><div>`;
   if(S.mapView==='map'){
-    h+=`<div class="netmap">${graphSVG()}</div><div class="netlegend">${specsShown.map(s=>`<span><button class="pill" style="padding:2px 10px;font-size:12.5px" data-action="specfilter" data-s="${esc(s)}" aria-pressed="${S.specFilter===s}"><span class="spec-dot" style="background:${SPECIALTY_COLORS[s]};margin-right:6px"></span>${esc(s)}</button></span>`).join('')}<span><i class="lg-line"></i>Connected</span><span><i class="lg-line dot"></i>Joining</span><span><i class="lg-line dash"></i>Pending</span><span>Small number: shared patients (count only)</span></div>`;
+    h+=`<div class="netmap specialty-map">${graphSVG()}</div><div class="netlegend" aria-label="Connection status key"><span><i class="lg-node connected"></i>Connected</span><span><i class="lg-node joining"></i>Joining</span><span><i class="lg-node pending"></i>Pending</span></div>`;
   } else {
     const rows=S.phys.filter(p=>p.rel!=='outside'||S.showOutside);
     h+=`<div class="tablewrap"><table class="list"><caption class="meta" style="text-align:left;padding:10px 12px">Physicians in your network${S.showOutside?' and recommended physicians outside it':''}</caption><thead><tr><th scope="col">Physician</th><th scope="col">Specialty</th><th scope="col">Relationship</th><th scope="col">Shared patients</th><th scope="col">Drug experience</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead><tbody>${rows.map(p=>`<tr><td><b>${esc(p.name)}</b><div class="meta">${esc(p.practice)}</div></td><td>${specChip(p.spec)}</td><td>${relLabel(p.rel)}</td><td>${sharedPatients(p.id).length||'None'}</td><td class="meta">${Object.keys(p.drugs).filter(d=>p.drugs[d]!=='low').join(', ')||'None listed'}</td><td><button class="btn ghost small" data-action="select" data-id="${p.id}">View</button></td></tr>`).join('')}</tbody></table></div>`;

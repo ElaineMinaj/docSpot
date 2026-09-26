@@ -239,6 +239,16 @@ input[type=text]{width:100%}
 .gnode{cursor:pointer}
 .gnode:focus{outline:none}
 .gnode:focus-visible .core{stroke:#fff;stroke-width:3}
+.specialty-map{padding:10px;background:var(--map-bg);border-radius:16px 16px 0 0;overflow:hidden}
+.specialty-map svg{display:block;width:100%;min-width:0;height:auto}
+.cluster-label rect{fill:var(--surface)}
+.lg-node{display:inline-block;width:13px;height:13px;border:2px solid var(--connected);border-radius:50%;flex:none}
+.lg-node.connected{background:var(--connected)}
+.lg-node.joining{border-color:var(--accent);border-style:dotted}
+.lg-node.pending{border-color:var(--warm);border-style:dashed}
+.gnode{cursor:pointer}
+.gnode:focus{outline:none}
+.gnode:focus-visible .core{stroke:var(--ink);stroke-width:3.5}
 .panel-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 18px 16px;position:sticky;top:80px}
 .panel-card h3{margin:0;font-size:20px;letter-spacing:-.015em}
 .panel-card h4{margin:16px 0 6px;font-size:13px;color:var(--muted);font-weight:600}
