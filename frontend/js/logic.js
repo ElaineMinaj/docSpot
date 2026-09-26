@@ -31,12 +31,12 @@ const TYPE_LABEL = {referral:'Referral', collab:'Care discussion', question:'Cli
 
 function resetState(){
   S = {
-    phys: JSON.parse(JSON.stringify(PHYSICIANS_SEED)),
+    phys: JSON.parse(JSON.stringify(PHYSICIANS_SEED)).concat(loadRealPhysicians()),
     patients: JSON.parse(JSON.stringify(PATIENTS_SEED)),
     requests: [], activity: [], seq: 1040, mapSel:'sato', mapView:'map', showOutside:false,
     specFilter:null, flow:null, expanded:null, editing:null
   };
-  S.phys.forEach((p,i)=>{ let h=0; for(const ch of p.id) h=(h*31+ch.charCodeAt(0))%100000; p.fax=`(555) 01${h%10}-${String(1000+(h*7)%9000)}`; p.npi=String(1245000000+h*1373%99999999); });
+  S.phys.forEach((p,i)=>{ if(p.real) return; let h=0; for(const ch of p.id) h=(h*31+ch.charCodeAt(0))%100000; p.fax=`(555) 01${h%10}-${String(1000+(h*7)%9000)}`; p.npi=String(1245000000+h*1373%99999999); });
   const R = (o)=>{ S.requests.push(Object.assign({attempts:1, events:[]},o)); };
   R({id:'CC-1031', type:'referral', to:'mensah', patient:'pt3', topic:'Nephrology evaluation for declining kidney function', method:'fax', status:'delivered', created:minsAgo(2900),
      events:[[minsAgo(2905),'AI drafted referral fax (simulated)'],[minsAgo(2902),'Dr. Lee reviewed and approved recipient and contents'],[minsAgo(2900),'Fax sent to (555) 014-2277'],[minsAgo(2899),'Delivered, 2 pages']]});
@@ -78,19 +78,20 @@ function recommendForPatient(pt){
     let score=relScore(p);
     if(p.link){reasons.push({t:p.link,k:'warm'});score+=6;}
     const dr=drugReasons(p,pt.keyDrugs); score+=dr.score; dr.out.forEach(t=>reasons.push({t,k:'drug'}));
-    if(p.accepting){score+=10;reasons.push({t:'Accepting new referrals',k:''});} else {score-=25;reasons.push({t:'Not accepting new referrals right now',k:'off'});}
+    if(p.accepting===true){score+=10;reasons.push({t:'Accepting new referrals',k:''});} else if(p.accepting===false){score-=25;reasons.push({t:'Not accepting new referrals right now',k:'off'});}
     if(p.respond&&p.respond!=='Unknown') reasons.push({t:`Usually responds in ${p.respond.toLowerCase()}`,k:''});
-    score+=Math.max(0,20-p.dist); reasons.push({t:`${p.dist} miles from your practice`,k:''});
+    if(p.dist!=null){score+=Math.max(0,20-p.dist); reasons.push({t:`${p.dist} miles from your practice`,k:''});}
+    if(p.real){score+=4; reasons.push({t:`Real practice from the NPI Registry: ${p.address}`,k:''});}
     return {p,score,reasons};
-  }).sort((a,b)=>b.score-a.score);
+  }).sort((a,b)=>b.score-a.score).slice(0,6);
 }
 function collabForPatient(pt){
   const team=pt.careTeam.map(doc).map(p=>({p,score:100+relScore(p),reasons:[{t:'Already caring for this patient',k:'warm'},{t:relReason(p),k:p.rel==='outside'?'off':'warm'}],group:'team'}));
-  const exp=S.phys.filter(p=>!pt.careTeam.includes(p.id)).map(p=>{const dr=drugReasons(p,pt.keyDrugs);return {p,score:dr.score+relScore(p)+Math.max(0,15-p.dist),reasons:[...dr.out.map(t=>({t,k:'drug'})),{t:relReason(p),k:p.rel==='outside'?'off':'warm'},{t:`${p.dist} miles away`,k:''}],group:'exp',dr};}).filter(x=>x.dr.score>=20).sort((a,b)=>b.score-a.score).slice(0,4);
+  const exp=S.phys.filter(p=>!pt.careTeam.includes(p.id)).map(p=>{const dr=drugReasons(p,pt.keyDrugs);return {p,score:dr.score+relScore(p)+(p.dist!=null?Math.max(0,15-p.dist):0),reasons:[...dr.out.map(t=>({t,k:'drug'})),{t:relReason(p),k:p.rel==='outside'?'off':'warm'},...(p.dist!=null?[{t:`${p.dist} miles away`,k:''}]:[])],group:'exp',dr};}).filter(x=>x.dr.score>=20).sort((a,b)=>b.score-a.score).slice(0,4);
   return {team,exp};
 }
 function collabForDrug(drug){
-  return S.phys.filter(p=>p.drugs[drug]).map(p=>{const lv=p.drugs[drug];return {p,score:(lv==='high'?20:lv==='moderate'?10:3)+relScore(p)+Math.max(0,15-p.dist),reasons:[{t:lv==='high'?`Frequently prescribes ${drug}`:lv==='moderate'?`Has prescribed ${drug}`:`Occasionally prescribes ${drug}`,k:'drug'},{t:relReason(p),k:p.rel==='outside'?'off':'warm'},{t:`${p.dist} miles away`,k:''}]};}).sort((a,b)=>b.score-a.score).slice(0,6);
+  return S.phys.filter(p=>p.drugs[drug]).map(p=>{const lv=p.drugs[drug];return {p,score:(lv==='high'?20:lv==='moderate'?10:3)+relScore(p)+(p.dist!=null?Math.max(0,15-p.dist):0),reasons:[{t:lv==='high'?`Frequently prescribes ${drug}`:lv==='moderate'?`Has prescribed ${drug}`:`Occasionally prescribes ${drug}`,k:'drug'},{t:relReason(p),k:p.rel==='outside'?'off':'warm'},...(p.dist!=null?[{t:`${p.dist} miles away`,k:''}]:[])]};}).sort((a,b)=>b.score-a.score).slice(0,6);
 }
 function understandQuestion(q){
   const low=' '+q.toLowerCase()+' ';
@@ -107,6 +108,7 @@ function recommendForQuestion(q){
     const dr=drugReasons(p,u.drugs); score+=dr.score; dr.out.forEach(t=>reasons.push({t,k:'drug'}));
     if(!score) return null;
     score+=relScore(p); reasons.push({t:relReason(p),k:p.rel==='outside'?'off':'warm'});
+    if(p.real) reasons.push({t:'Real practice from the NPI Registry',k:''});
     if(p.respond&&p.respond!=='Unknown') reasons.push({t:`Usually responds in ${p.respond.toLowerCase()}`,k:''});
     return {p,score,reasons};
   }).filter(Boolean).sort((a,b)=>b.score-a.score).slice(0,5);

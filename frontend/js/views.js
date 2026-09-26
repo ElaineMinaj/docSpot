@@ -34,7 +34,7 @@ function viewSummary(){
 /* ---------- 2. Network map ---------- */
 function graphLayout(){
   const order=Object.keys(SPECIALTY_COLORS);
-  const nodes=S.phys.filter(p=>p.rel!=='outside'||S.showOutside).sort((a,b)=>order.indexOf(a.spec)-order.indexOf(b.spec)||a.name.localeCompare(b.name));
+  const nodes=S.phys.filter(p=>(p.rel!=='outside'||S.showOutside)&&!(p.real&&p.rel==='outside')).sort((a,b)=>order.indexOf(a.spec)-order.indexOf(b.spec)||a.name.localeCompare(b.name));
   const pos={}, n=nodes.length;
   nodes.forEach((p,i)=>{ const ang=-Math.PI/2+(i+.5)/n*2*Math.PI; const r={connected:150,joining:198,pending:236,outside:268}[p.rel]; pos[p.id]={x:500+Math.cos(ang)*r*1.45,y:300+Math.sin(ang)*r}; });
   return {nodes,pos};
@@ -60,8 +60,9 @@ function graphSVG(){
   return s+'</svg>';
 }
 function viewNetwork(){
-  const specsShown=[...new Set(S.phys.filter(p=>p.rel!=='outside'||S.showOutside).map(p=>p.spec))];
-  let h=`<section class="section" aria-labelledby="h-net"><div class="section-head"><h2 id="h-net">Network map</h2><div class="nettools"><div class="seg small" role="group" aria-label="Map or list"><button data-action="mapview" data-v="map" aria-pressed="${S.mapView==='map'}">Map</button><button data-action="mapview" data-v="list" aria-pressed="${S.mapView==='list'}">List</button></div><label class="meta" style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-bind="outside" ${S.showOutside?'checked':''}> Show recommended physicians outside your network</label></div></div><div class="netwrap"><div>`;
+  const specsShown=[...new Set(S.phys.filter(p=>(p.rel!=='outside'||S.showOutside)&&!(p.real&&p.rel==='outside')).map(p=>p.spec))];
+  const realCount=S.phys.filter(p=>p.real).length;
+  let h=`<section class="section" aria-labelledby="h-net"><div class="section-head"><h2 id="h-net">Network map</h2><div class="nettools"><div class="seg small" role="group" aria-label="Map or list"><button data-action="mapview" data-v="map" aria-pressed="${S.mapView==='map'}">Map</button><button data-action="mapview" data-v="list" aria-pressed="${S.mapView==='list'}">List</button></div><label class="meta" style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-bind="outside" ${S.showOutside?'checked':''}> Show recommended physicians outside your network</label></div></div>${realCount?`<p class="note" style="margin:-4px 0 12px">${realCount} real Atlanta-area clinicians from the NPI Registry are available for recommendations. They appear in the list view and in each action's results.</p>`:''}<div class="netwrap"><div>`;
   if(S.mapView==='map'){
     h+=`<div class="netmap">${graphSVG()}</div><div class="netlegend">${specsShown.map(s=>`<span><button class="pill" style="padding:2px 10px;font-size:12.5px" data-action="specfilter" data-s="${esc(s)}" aria-pressed="${S.specFilter===s}"><span class="spec-dot" style="background:${SPECIALTY_COLORS[s]};margin-right:6px"></span>${esc(s)}</button></span>`).join('')}<span><i class="lg-line"></i>Connected</span><span><i class="lg-line dot"></i>Joining</span><span><i class="lg-line dash"></i>Pending</span><span>Small number: shared patients (count only)</span></div>`;
   } else {
@@ -76,7 +77,7 @@ function viewPanel(){
   const sh=sharedPatients(p.id).length, drugs=Object.keys(p.drugs).filter(d=>p.drugs[d]!=='low');
   const req=S.requests.find(r=>r.to===p.id&&!STATUS[r.status].done);
   let h=`<aside class="panel-card" aria-live="polite"><div style="display:flex;gap:12px;align-items:center">${avatar(p)}<div><h3>${esc(p.name)}</h3><div class="meta">${esc(p.practice)}, ${esc(p.city)}</div></div></div><div class="chips" style="margin-top:12px">${specChip(p.spec)}<span class="status ${p.rel==='connected'?'good':p.rel==='outside'?'':'wait'}">${relLabel(p.rel)}</span></div>`;
-  h+=`<h4>Relationship to you</h4><p style="margin:0;font-size:14px">${esc(p.link||'No prior contact')}</p><p class="meta" style="margin:4px 0 0">${p.dist} miles away${p.hospital?`, ${esc(p.hospital)}`:''}</p>`;
+  h+=`<h4>Relationship to you</h4><p style="margin:0;font-size:14px">${esc(p.link||'No prior contact')}</p><p class="meta" style="margin:4px 0 0">${p.real?`${esc(p.address)}${p.phone?`, phone ${esc(p.phone)}`:''}`:`${p.dist} miles away${p.hospital?`, ${esc(p.hospital)}`:''}`}</p>${p.real?`<p class="meta" style="margin:4px 0 0">Source: NPI Registry (${esc(p.taxonomy)})</p>`:''}`;
   h+=`<h4>Shared patients</h4><p style="margin:0;font-size:14px">${sh?`${sh} shared ${sh===1?'patient':'patients'}`:'None'}</p>`;
   h+=`<h4>Relevant drug experience</h4>${drugs.length?`<div class="chips">${drugs.map(d=>`<span class="chip drug">${esc(d)}, ${p.drugs[d]}</span>`).join('')}</div>`:'<p class="meta" style="margin:0">None listed</p>'}`;
   h+='<div class="btnrow">';
@@ -196,7 +197,7 @@ function stepQuestion(f){
 function stepRecommend(f){
   let h='';
   const pt=f.patient?pat(f.patient):null;
-  const opt=(x)=>`<button class="opt" data-action="pick-doc" data-id="${x.p.id}">${avatar(x.p)}<div class="grow"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>${esc(x.p.name)}</b>${specChip(x.p.spec)}</div><div class="meta">${esc(x.p.practice)}</div><ul class="reasons">${x.reasons.map(r=>`<li class="${r.k}">${esc(r.t)}</li>`).join('')}</ul></div></button>`;
+  const opt=(x)=>`<button class="opt" data-action="pick-doc" data-id="${x.p.id}">${avatar(x.p)}<div class="grow"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>${esc(x.p.name)}</b>${specChip(x.p.spec)}</div><div class="meta">${esc(x.p.real?x.p.address:x.p.practice)}${x.p.real?' <span class="tag">NPI Registry</span>':''}</div><ul class="reasons">${x.reasons.map(r=>`<li class="${r.k}">${esc(r.t)}</li>`).join('')}</ul></div></button>`;
   if(f.type==='referral'){
     const list=recommendForPatient(pt);
     h+=`<div class="box" style="margin-bottom:14px"><b>${pt.initials}, ${pt.age}${pt.sex}</b><div class="meta">${esc(pt.summary)}. Recommended specialty: ${esc(pt.needs)}</div></div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>Recommended ${esc(pt.needs.toLowerCase())} physicians</b>${AI_TAG}</div><p class="disclaimer">Ranked by relationship to you, relevant treatment experience, whether they're accepting referrals, and distance. Payments from drug companies are never used. Review each reason before choosing.</p>`;
@@ -230,7 +231,7 @@ function faxPreview(f,p,code){
 }
 function stepReview(f){
   const p=doc(f.to), pt=f.patient?pat(f.patient):null, inApp=p.rel==='connected'||p.rel==='joining';
-  let h=`<div class="review"><div><div class="box"><h3>Recipient</h3><div class="kvrow"><span>Physician</span><span>${esc(p.name)}</span></div><div class="kvrow"><span>Specialty</span><span>${esc(p.spec)}</span></div><div class="kvrow"><span>Practice</span><span>${esc(p.practice)}</span></div><div class="kvrow"><span>NPI</span><span>${p.npi}</span></div><div class="kvrow"><span>Delivery</span><span>${inApp?'Secure in-app message':'Secure fax to '+esc(p.fax)}</span></div><div class="kvrow"><span>Relationship</span><span>${relLabel(p.rel)}</span></div>${f.fixedTo||f.type==='connect'?'':'<button class="btn link" data-action="back" style="margin-top:8px">Choose a different physician</button>'}</div>`;
+  let h=`<div class="review"><div><div class="box"><h3>Recipient</h3><div class="kvrow"><span>Physician</span><span>${esc(p.name)}</span></div><div class="kvrow"><span>Specialty</span><span>${esc(p.spec)}</span></div><div class="kvrow"><span>Practice</span><span>${esc(p.practice)}</span></div><div class="kvrow"><span>NPI</span><span>${p.npi||'In NPI Registry (number not in export)'}</span></div>${p.real?'<div class="kvrow"><span>Data source</span><span>NPI Registry, real practice</span></div>':''}<div class="kvrow"><span>Delivery</span><span>${inApp?'Secure in-app message':'Secure fax to '+esc(p.fax)}</span></div><div class="kvrow"><span>Relationship</span><span>${relLabel(p.rel)}</span></div>${f.fixedTo||f.type==='connect'?'':'<button class="btn link" data-action="back" style="margin-top:8px">Choose a different physician</button>'}</div>`;
   if(f.type==='referral'||f.type==='collab') h+=`<div class="box"><h3>${f.type==='referral'?'Reason for referral':'Discussion topic'}</h3><input type="text" data-bind="topic" value="${esc(f.topic)}" aria-label="${f.type==='referral'?'Reason for referral':'Discussion topic'}"></div>`;
   h+=`<div class="box"><h3>Information to share</h3>${pt?`<p class="meta" style="margin:0 0 6px">Patient ${pt.initials}, ${pt.age}${pt.sex}. Only what's checked is included.</p>`:''}${f.fields.map(x=>`<label class="check ${x.locked?'locked':''}"><input type="checkbox" data-field="${x.id}" ${x.on?'checked':''} ${x.locked?'disabled':''}><span>${esc(x.label)}${x.note?`<small>${esc(x.note)}</small>`:''}</span></label>`).join('')}</div></div>`;
   h+=`<div><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px"><b>${inApp?'Message':'Fax'} draft</b><span class="ai">AI draft, simulated. Review before sending.</span></div><textarea data-bind="text" style="min-height:230px" aria-label="Draft text">${esc(f.text)}</textarea><div style="display:flex;gap:10px;margin:8px 0 14px;flex-wrap:wrap"><button class="btn ghost small" data-action="regen">Regenerate from checked information</button><button class="btn ghost small" data-action="preview" aria-expanded="${!!f.showPreview}">${f.showPreview?'Hide':'Show'} ${inApp?'message':'fax'} preview</button></div>${f.showPreview?faxPreview(f,p,'A7K-'+(S.seq+1)):''}

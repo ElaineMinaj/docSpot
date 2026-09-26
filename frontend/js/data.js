@@ -108,3 +108,51 @@ const MANUFACTURER_RESOURCES = {
   'erenumab':        {program:'copay support and bridge supply'},
   'methotrexate':    null
 };
+
+// ---------- Real NPI physicians (Elaine's cleaned export) ----------
+// frontend/data/physicians.js defines REAL_PHYSICIANS = [{provider_full_name, primary_taxonomy_description,
+// full_practice_address, primary_practice_phone, primary_practice_fax, (optional) npi}, ...]
+// Real physicians appear as "outside your network": recommended, and reached by (simulated) fax.
+// NPI taxonomy looks like "Base" or "Base, Subspecialty". Map only the specialties the app uses.
+const SPECIALTY_KEYS = [
+  ['rheumatology','Rheumatology'], ['endocrinology','Endocrinology'], ['cardiovascular','Cardiology'],
+  ['cardiology','Cardiology'], ['nephrology','Nephrology'], ['dermatology','Dermatology'],
+  ['neurology','Neurology'], ['gastroenterology','Gastroenterology'], ['pulmonary','Pulmonology']
+];
+function taxonomyToSpecialty(tax){
+  const low=String(tax||'').toLowerCase().trim();
+  const [base, sub] = low.split(',').map(x=>x.trim());
+  if(sub){
+    const hit=SPECIALTY_KEYS.find(([k])=>sub.includes(k)); if(hit) return hit[1];
+    if(/^nurse practitioner$/.test(base)&&/(family|primary care|adult health)/.test(sub)) return 'Family Medicine';
+    return null;   // other subspecialties (psychiatry, oncology, infectious disease...) aren't used by the app
+  }
+  if(base==='family medicine') return 'Family Medicine';
+  if(base==='internal medicine') return 'Internal Medicine';
+  const hit=SPECIALTY_KEYS.find(([k])=>base===k||base.startsWith(k)); return hit?hit[1]:null;
+}
+function titleCase(str){ return String(str||'').toLowerCase().replace(/\b([a-z])/g,m=>m.toUpperCase()).replace(/\bIi\b/g,'II').replace(/\bIii\b/g,'III'); }
+function formatPhone(str){ const d=String(str||'').replace(/\D/g,'').slice(-10); return d.length===10?`(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`:''; }
+function loadRealPhysicians(){
+  if(typeof REAL_PHYSICIANS==='undefined'||!Array.isArray(REAL_PHYSICIANS)) return [];
+  const out=[], seen=new Set();
+  REAL_PHYSICIANS.forEach((r,i)=>{
+    const tax=String(r.primary_taxonomy_description||''), low=tax.toLowerCase();
+    const spec=taxonomyToSpecialty(tax); if(!spec) return;
+    const npi=String(r.npi||r.npi_number||'').replace(/\D/g,'');
+    const fax=formatPhone(r.primary_practice_fax); if(!fax) return;          // no fax, no way to reach them in this workflow
+    const full=titleCase(r.provider_full_name).trim(); if(!full||seen.has(full)) return; seen.add(full);
+    const cred=/nurse practitioner/.test(low)?'NP':/physician assistant/.test(low)?'PA':'MD';
+    const addr=String(r.full_practice_address||'');
+    const parts=addr.split(',').map(x=>x.trim());
+    const zip=(addr.match(/\b(\d{5})(\d{4})?\s*$/)||[])[1]||'';
+    const city=parts.length>=2?titleCase(parts[parts.length-2]):'Atlanta';
+    out.push({
+      id:'npi-'+(npi||i), real:true, npi, name:cred==='MD'?`Dr. ${full}`:`${full}, ${cred}`, cred,
+      spec, taxonomy:tax, practice:titleCase(parts[0]||'Practice address on file'), address:titleCase(addr.replace(/\s*\d{5}(\d{4})?\s*$/,'')),
+      city, zip, dist:null, rel:'outside', link:'Found in the NPI Registry', hospital:'', drugs:{}, accepting:null,
+      respond:'Unknown', fax, phone:formatPhone(r.primary_practice_phone)
+    });
+  });
+  return out;
+}
