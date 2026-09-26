@@ -105,7 +105,7 @@ function viewActions(){
 /* ---------- 4. Connection and referral flow ---------- */
 function reqActions(r){
   if(r.status==='failed') return `<button class="btn small" data-action="retry" data-id="${r.id}">Retry send</button><button class="btn ghost small" data-action="editfax" data-id="${r.id}">Update fax number</button>`;
-  if(r.status==='delivered'&&r.method==='fax') return `<button class="btn ghost small" data-action="recipient" data-id="${r.id}">Open recipient's view</button> <span class="sim">Simulated</span>`;
+  if(r.status==='delivered'&&r.method==='fax') return `<button class="btn ghost small" data-action="recipient" data-id="${r.id}">Open recipient's view</button>`;
   if(r.status==='delivered') return `<button class="btn ghost small" data-action="respond" data-id="${r.id}" data-a="1">Simulate: replies</button><button class="btn ghost small" data-action="respond" data-id="${r.id}" data-a="0">Simulate: declines</button>`;
   if(r.status==='joining') return `<button class="btn ghost small" data-action="finish" data-id="${r.id}">Complete verification</button>`;
   if(r.status==='sending') return '<span class="meta">Sending…</span>';
