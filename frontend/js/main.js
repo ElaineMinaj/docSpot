@@ -136,7 +136,6 @@ document.addEventListener('click',e=>{
     case 'rv-consult': sendConsultNote(findReq(S.rv.id)); render(); toast('Consult note sent to Dr. Lee (simulated).'); break;
     case 'retry': { const r=findReq(id); addEvent(r,'Dr. Lee chose to retry the send'); sendRequest(r,render); break; }
     case 'editfax': S.editing=id; S.expanded=id; render(); break;
-    case 'respond': respond(findReq(id),t.dataset.a==='1',render); break;
     case 'finish': finishJoin(findReq(id)); render(); break;
     case 'audit': S.expanded=S.expanded===id?null:id; render(); break;
     case 'show-req': if(!id) return; S.expanded=id; render(); { const row=document.getElementById('row-'+id); if(row) row.scrollIntoView({behavior:'smooth',block:'center'}); } break;

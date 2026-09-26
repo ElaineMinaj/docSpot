@@ -158,10 +158,8 @@ def draft(req: DraftRequest):
                   "Rewrite it using only the facts above, in their own wording.")
     if problem:
         return {"text": None, "reason": f"draft {problem}"}
-    closing = ""
-    if not req.recipient_on_impiricus:
-        closing = ("\n\nTo reply, scan the QR code on this fax. No account needed. "
-                   "You may also choose to join Impiricus (free, verified physicians only).")
+    # Every request goes by fax, so every draft ends with how to reply
+    closing = "\n\nTo reply, scan the QR code on this fax. No account needed."
     return {"text": f"{body.strip()}{closing}\n\n{_signature(req.sender)}", "model": ai.model()}
 
 

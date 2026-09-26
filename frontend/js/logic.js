@@ -48,8 +48,8 @@ function resetState(){
      events:[[minsAgo(3000),'Fax sent and delivered'],[minsAgo(1300),'Dr. Okafor accepted through the secure link'],[minsAgo(1299),'NPI verification started to add Dr. Okafor to your network']]});
   R({id:'CC-1038', type:'collab', to:'price', patient:'pt3', topic:'Anticoagulation plan with declining kidney function', method:'fax', status:'joining', created:minsAgo(400),
      events:[[minsAgo(400),'Fax sent and delivered'],[minsAgo(90),'Dr. Price accepted by fax-back form'],[minsAgo(89),'NPI verification started']]});
-  R({id:'CC-1035', type:'question', to:'sato', topic:'When to add basal insulin on semaglutide', method:'in-app', status:'responded', created:minsAgo(1700),
-     events:[[minsAgo(1700),'Sent as a secure in-app message'],[minsAgo(1400),'Dr. Sato replied']]});
+  R({id:'CC-1035', type:'question', to:'sato', topic:'When to add basal insulin on semaglutide', method:'fax', wasConnected:true, status:'responded', created:minsAgo(1700),
+     events:[[minsAgo(1700),'Fax sent and delivered'],[minsAgo(1400),'Dr. Sato answered through the secure response page']]});
   S.activity = [
     [minsAgo(89),'Dr. Theo Price accepted your discussion request and is joining your network','live'],
     [minsAgo(170),'Referral fax to Dr. Grace Whitaker failed to send','bad'],
@@ -219,7 +219,7 @@ function draftRequest(f){
     if(sd&&on('support')) shared.support=`The ${sd} manufacturer offers ${MANUFACTURER_RESOURCES[sd].program}, available through Impiricus (link included with the secure referral).`;
   }
   const person=x=>({name:x.name, specialty:x.spec, practice:x.practice, city:x.city||'', npi:x.npi||''});
-  return {type:f.type, channel:p.rel==='connected'||p.rel==='joining'?'in-app':'fax', recipient:person(p),
+  return {type:f.type, channel:'fax', recipient:person(p),
     recipient_on_impiricus:p.rel==='connected'||p.rel==='joining', sender:person(ME), topic:f.topic, question:f.question||'', shared};
 }
 const DRAFT_LABEL = {ai:'AI draft. Review before sending.', template:'AI draft, simulated: template (AI backend off or slow). Review before sending.'};
@@ -237,7 +237,7 @@ function createMslRequest(drug,question,patientId){
 function createRequest(f){
   const p=doc(f.to);
   const r={id:'CC-'+(++S.seq), type:f.type, to:f.to, patient:f.patient||null, topic:f.type==='question'?f.question:f.topic,
-    method:p.rel==='connected'||p.rel==='joining'?'in-app':'fax', status:'draft', created:Date.now(), attempts:0, events:[], faxText:f.text, fields:f.fields.filter(x=>x.on).map(x=>x.label), code:'A7K-'+S.seq};
+    method:'fax', wasConnected:p.rel==='connected'||p.rel==='joining', status:'draft', created:Date.now(), attempts:0, events:[], faxText:f.text, fields:f.fields.filter(x=>x.on).map(x=>x.label), code:'A7K-'+S.seq};
   const what=r.method==='fax'?'fax':'message';
   addEvent(r,f.draftSource==='ai'?`AI drafted the ${what} (${f.draftModel||'AI model'}) from the checked information only`:`AI drafted the ${what} (simulated: template, AI backend off or slow)`);
   if(f.edited) addEvent(r,'Dr. Lee edited the draft');
@@ -250,9 +250,6 @@ function createRequest(f){
 function sendRequest(r,rerender){
   const p=doc(r.to);
   r.attempts++;
-  if(r.method==='in-app'){
-    r.status='delivered'; addEvent(r,'Delivered as a secure in-app message'); log(`${TYPE_LABEL[r.type]} sent to ${p.name}`,'wait'); rerender(); return;
-  }
   r.status='sending'; addEvent(r,`Fax send attempt ${r.attempts} to ${p.fax} (simulated)`);
   if(p.rel==='outside'){ p.rel='pending'; p.link='Invitation sent by fax just now'; }
   rerender();
@@ -261,17 +258,6 @@ function sendRequest(r,rerender){
     else { r.status='delivered'; r.failReason=null; addEvent(r,`Delivered, ${r.type==='connect'?1:2} pages. Awaiting response`); log(`${TYPE_LABEL[r.type]} fax delivered to ${p.name}`,'wait'); }
     rerender();
   },1600);
-}
-function respond(r,accept,rerender){
-  if(r.method==='impiricus'){ r.status=accept?'responded':'declined'; addEvent(r,accept?'Manufacturer medical team replied with official information (simulated)':'Manufacturer could not answer this request (simulated)'); log(`${r.toLabel} ${accept?'replied to':'could not answer'} your request`,accept?'good':'bad'); rerender(); return; }
-  const p=doc(r.to);
-  if(!accept){ r.status='declined'; addEvent(r,`${p.name} declined (simulated response)`); log(`${p.name} declined your ${TYPE_LABEL[r.type].toLowerCase()}`,'bad'); rerender(); return; }
-  if(r.method==='in-app'){ r.status='responded'; addEvent(r,`${p.name} replied (simulated)`); log(`${p.name} replied to your ${TYPE_LABEL[r.type].toLowerCase()}`,'good'); rerender(); return; }
-  r.status='joining'; p.rel='joining'; p.link=`Accepted your ${TYPE_LABEL[r.type].toLowerCase()} through the secure link`; p.newToImpiricus=true;
-  addEvent(r,`${p.name} accepted through the secure link (simulated response)`); addEvent(r,'NPI verification started');
-  if(r.patient){ const pt=pat(r.patient); if(!pt.careTeam.includes(p.id)) pt.careTeam.push(p.id); addEvent(r,'Patient identifiers released to the accepting physician'); }
-  log(`${p.name} accepted and is joining your network`,'live'); rerender();
-  setTimeout(()=>{ finishJoin(r); rerender(); },1800);
 }
 /* ---------- Recipient's side (simulated): fax inbox → secure link → respond → optional join ---------- */
 // The fax as the recipient received it. Older sample requests have no saved text, so rebuild it.
@@ -288,17 +274,17 @@ function recipientVerified(r){
 // Accepting and joining are separate choices, made on separate screens.
 function recipientRespond(r,{choice,reply},rerender){
   const p=doc(r.to), label=TYPE_LABEL[r.type].toLowerCase();
-  const via='through the secure link (simulated response)';
+  const via='through the secure response page (simulated response)', member=p.rel==='connected'||p.rel==='joining';
   if(choice==='decline'){
-    r.status='declined'; p.rel='outside'; p.link=`Declined your ${label}`;
+    r.status='declined'; if(!member){ p.rel='outside'; p.link=`Declined your ${label}`; }
     addEvent(r,`${p.name} declined ${via}`); log(`${p.name} declined your ${label}`,'bad'); rerender(); return;
   }
   if(choice==='call'){
-    r.status='callback'; p.rel='outside'; p.link='Asked for a phone call instead';
+    r.status='callback'; if(!member){ p.rel='outside'; p.link='Asked for a phone call instead'; }
     addEvent(r,`${p.name} asked for a phone call ${via}`); log(`${p.name} asked you to call about your ${label}`,'wait'); rerender(); return;
   }
   // Accepted (referral, discussion, answered the question, or accepted the invitation)
-  r.status='accepted'; p.rel='outside'; p.link=`${r.type==='question'?'Answered':'Accepted'} your ${label}`;
+  r.status='accepted'; if(!member){ p.rel='outside'; p.link=`${r.type==='question'?'Answered':'Accepted'} your ${label}`; }
   addEvent(r,`${p.name} ${r.type==='question'?'answered':'accepted'} ${via}`);
   if(reply) addEvent(r,`Reply: "${reply}"`);
   if(r.patient){ const pt=pat(r.patient); if(!pt.careTeam.includes(p.id)) pt.careTeam.push(p.id); addEvent(r,'Patient name and date of birth released to the accepting physician'); }
