@@ -82,7 +82,7 @@ function viewPanel(){
   h+=`<h4>Relevant drug experience</h4>${drugs.length?`<div class="chips">${drugs.map(d=>`<span class="chip drug">${esc(d)}, ${p.drugs[d]}</span>`).join('')}</div>`:'<p class="meta" style="margin:0">None listed</p>'}`;
   h+='<div class="btnrow">';
   if(p.rel==='connected'||p.rel==='joining'){
-    h+=`<button class="btn small" data-action="start" data-type="collab" data-to="${p.id}">Collaborate on care</button><button class="btn ghost small" data-action="start" data-type="question" data-to="${p.id}">Ask a question</button><button class="btn ghost small" data-action="start" data-type="referral" data-to="${p.id}">Refer a patient</button>`;
+    h+=`<button class="btn small" data-action="start" data-type="referral" data-to="${p.id}">Refer a patient</button>`;
   } else if(p.rel==='pending'){
     h+=`<button class="btn small" data-action="show-req" data-id="${req?req.id:''}">${req&&req.status==='failed'?'Fix failed fax':'View invitation status'}</button>`;
   } else {
