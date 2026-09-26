@@ -29,6 +29,16 @@ async function aiDraft(req){
   catch(e){ return null; }
 }
 
+/* ---------- Patient consent ---------- */
+// These need the backend. Callers handle a thrown error (backend off) themselves.
+const consentPreview = payload => apiPost('/consent/preview', payload, 6000);
+const consentSend = payload => apiPost('/consent/send', payload, 20000);
+async function consentStatus(token){
+  const res=await fetch(API_BASE+'/consent/'+token+'/status',{signal:AbortSignal.timeout(4000)});
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  return res.json();
+}
+
 /* ---------- Privacy check ---------- */
 // mode: 'ai' (pattern rules + Claude) | 'patterns' (backend, no key) | 'offline' (rules in this file)
 const PRIVACY_LABEL = {
@@ -68,10 +78,10 @@ function localPatternCheck({text,patient,approved,topic,allowed}){
     [name,...name.split(/\s+/)].forEach(part=>{
       if(part.length<3) return;
       for(const m of text.matchAll(new RegExp('(?<!\\w)'+rx(part)+'(?!\\w)','gi'))){
-        if(!/\bDr\.?\s*$/.test(text.slice(0,m.index))){ add(m[0],'Patient name. Identifiers are released through the secure link only after the physician accepts.','identifier'); break; }
+        if(!/\bDr\.?\s*$/.test(text.slice(0,m.index))){ add(m[0],'Patient name. Identifiers are released only after the patient consents.','identifier'); break; }
       }
     });
-    if(patient.dob&&findPhrase(patient.dob)) add(findPhrase(patient.dob),'Patient date of birth. Released only after the physician accepts.','identifier');
+    if(patient.dob&&findPhrase(patient.dob)) add(findPhrase(patient.dob),'Patient date of birth. Released only after the patient consents.','identifier');
     const mrn=String(patient.mrn||'').replace(/\D/g,'');
     if(mrn.length>=3){ const m=text.match(new RegExp('(?<!\\d)'+mrn+'(?!\\d)')); if(m) add(m[0],'Looks like the patient’s medical record number.','identifier'); }
   }

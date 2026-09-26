@@ -102,6 +102,11 @@ function viewActions(){
 
 /* ---------- 4. Connection and referral flow ---------- */
 function reqActions(r){
+  const c=r.consent;
+  if(c&&c.status==='review') return `<button class="btn small" data-action="consent-open" data-id="${r.id}">Review consent form</button>`;
+  if(c&&c.status==='sent'&&c.simulated) return `<button class="btn ghost small" data-action="consent-simsign" data-id="${r.id}">Simulate: patient signs</button>`;
+  // Always offer the link: Gmail can accept an email and still block it later, so the demo never gets stuck
+  if(c&&c.status==='sent'&&c.link) return `<a class="btn ghost small" href="${esc(c.link)}" target="_blank" rel="noopener">Open patient\u2019s form</a>`;
   if(r.status==='failed') return `<button class="btn small" data-action="retry" data-id="${r.id}">Retry send</button><button class="btn ghost small" data-action="editfax" data-id="${r.id}">Update fax number</button>`;
   if(r.status==='delivered'&&r.method==='fax') return `<button class="btn ghost small" data-action="recipient" data-id="${r.id}">Open recipient's view</button>`;
   if(r.status==='joining') return `<button class="btn ghost small" data-action="finish" data-id="${r.id}">Complete verification</button>`;
@@ -114,7 +119,19 @@ const REQ_GROUPS = [
   ['waiting','Waiting on others',['draft','sending','delivered','joining']],
   ['done','Completed',['responded','accepted','declined','added']]
 ];
+function reqGroup(r){
+  const c=r.consent;
+  if(c&&c.status==='review') return 'attention';
+  if(c&&c.status==='sent') return 'waiting';
+  return REQ_GROUPS.find(g=>g[2].includes(r.status))[0];
+}
+function consentPill(r){ const c=r.consent; if(!c) return ''; const [l,t]=CONSENT_LABEL[c.status]; return `<span class="status ${t}" style="margin-top:4px">${l}</span>`; }
 function reqNote(r,p){
+  const c=r.consent;
+  if(c&&c.status==='review') return `${esc(shortName(p))} accepted. Approve the consent form so it can be emailed to the patient`;
+  if(c&&c.status==='sent') return c.simulated?'Consent form sent (simulated). Waiting for the patient':c.emailed?'Consent form emailed. Waiting for the patient to sign':'Waiting for the patient to sign (link shown, email not set up)';
+  if(c&&c.status==='signed') return `Patient signed. Approved information sent to ${esc(shortName(p))}`;
+  if(c&&c.status==='declined') return 'Patient did not authorize sharing. Nothing was released';
   const via=r.method==='fax'?'fax':r.method==='impiricus'?'through Impiricus':'in-app message';
   if(r.status==='failed') return `<span style="color:var(--danger)">${esc(r.failReason)}</span>`;
   if(r.status==='callback') return `Call ${esc(p.phone||'their office')} to discuss`;
@@ -131,14 +148,14 @@ function reqSteps(r){
 function viewRequests(){
   let h=`<section class="section" aria-labelledby="h-flow"><div class="section-head"><h2 id="h-flow">Your requests</h2><p>Reviewed by you, sent by secure fax or message, and tracked until the physician responds. Fax delivery is simulated in this prototype.</p></div>`;
   REQ_GROUPS.forEach(([key,title,statuses])=>{
-    const list=S.requests.filter(r=>statuses.includes(r.status)); if(!list.length) return;
+    const list=S.requests.filter(r=>reqGroup(r)===key); if(!list.length) return;
     h+=`<div class="req-group ${key}"><h3>${title} <span class="meta">${list.length}</span></h3>`;
     list.forEach(r=>{
       const p=r.to?doc(r.to):{name:r.toLabel,spec:r.toSub,fax:''}, pt=r.patient?pat(r.patient):null, open=S.expanded===r.id;
       h+=`<div class="req ${open?'open':''}" id="row-${r.id}">
         ${r.to?avatar(p):'<div class="avatar">MT</div>'}
         <div class="req-main"><b>${esc(p.name)}</b> <span class="meta">${esc(p.spec)}</span><div class="req-what">${TYPE_LABEL[r.type]}${pt?` for <b>${pt.initials}</b>`:''}: ${esc(r.topic.length>70?r.topic.slice(0,67)+'…':r.topic)}</div></div>
-        <div class="req-status">${statusPill(r.status)}<div class="meta">${reqNote(r,p)}</div></div>
+        <div class="req-status"><div class="chips">${statusPill(r.status)}${consentPill(r)}</div><div class="meta" style="margin-top:4px">${reqNote(r,p)}</div></div>
         <div class="acts req-acts">${reqActions(r)}<button class="btn link" data-action="audit" data-id="${r.id}" aria-expanded="${open}">${open?'Hide details':'Details'}</button></div>
       </div>`;
       if(open) h+=`<div class="req-detail">${reqSteps(r)}${S.editing===r.id?`<form class="inline-input" data-submit="fax" data-id="${r.id}"><input type="text" name="fax" value="${esc(p.fax)}" aria-label="Fax number for ${esc(p.name)}" style="max-width:220px"><button class="btn small" type="submit">Save and resend</button></form><p class="note" style="margin-top:4px">Resending uses the contents you already approved.</p>`:''}<b style="font-size:13.5px;display:block;margin-top:12px">Audit trail <span class="meta">${r.id}</span></b><ol class="audit">${r.events.map(e=>`<li><time>${clock(e[0])}</time>${esc(e[1])}</li>`).join('')}</ol></div>`;
@@ -204,7 +221,7 @@ function rvJoin(r,p,v){
   if(v.choice!=='accept') return `<div class="box"><h2 id="rv-title" tabindex="-1" style="margin:0 0 6px;font-size:20px">Response sent</h2><p style="margin:0">${esc(ME.short)} will see that you ${v.choice==='call'?'asked for a phone call':'declined'}. Nothing else is shared, and you haven't been signed up for anything.</p></div><div class="rv-foot"><span></span><button class="btn" data-action="close-modal">Back to Dr. Lee's view</button></div>`;
   const pt=r.patient?pat(r.patient):null, member=r.wasConnected;
   let h=`<div class="box ok-box"><h2 id="rv-title" tabindex="-1" style="margin:0 0 6px;font-size:20px">${r.type==='question'?'Answer sent':'Accepted'}. ${esc(ME.short)} has been notified.</h2>
-  ${pt?`<div class="reveal"><span class="tag">Released after you accepted</span><div class="kvrow"><span>Patient</span><span><b>${esc(pt.name)}</b></span></div><div class="kvrow"><span>Date of birth</span><span>${esc(pt.dob)}</span></div><div class="kvrow"><span>Already shared</span><span>${esc(recipientFields(r).filter(x=>!/Name and date of birth/.test(x)).join(', '))}</span></div></div>`:''}</div>`;
+  ${pt&&r.consent?`<div class="reveal"><span class="tag">Next: patient consent</span><p style="margin:4px 0 0">${esc(ME.short)} will send the patient a consent form. The patient's name, date of birth, and records are sent to you only after the patient signs.</p></div>`:''}</div>`;
   if(member) return h+`<div class="box"><p style="margin:0">You're already on Impiricus and connected with ${esc(ME.short)}, so there's nothing else to do.</p></div><div class="rv-foot"><span></span><button class="btn" data-action="close-modal">Back to Dr. Lee's view</button></div>`;
   h+=`<div class="box"><h3 style="font-size:16px">One more, separate choice: join Impiricus?</h3><p class="meta" style="margin:0 0 10px">Free and limited to verified physicians. Colleagues like ${esc(ME.short)} can reach you securely, and you keep receiving faxes if you prefer. Your response above is already sent either way.</p>`;
   if(!v.joinYes) return h+`<div class="btnrow" style="margin-top:0"><button class="btn" data-action="rv-joinyes">Join Impiricus (free)</button><button class="btn ghost" data-action="rv-joinno">Not now</button></div></div>`;
@@ -223,7 +240,7 @@ function rvAccount(r,p,v){
   return `<div class="rv-home-head"><div style="display:flex;gap:12px;align-items:center">${avatar(p)}<div><h2 id="rv-title" tabindex="-1" style="margin:0;font-size:22px">Welcome to Impiricus, ${esc(p.name)}</h2><div class="meta">${esc(p.spec)}, ${esc(p.real?p.address:p.practice)}</div></div></div><span class="verified">NPI verified</span></div>
   <div class="rv-cols"><div>
   <div class="box"><h3>Your network</h3><div class="person" style="padding:8px 0;border:0"><div class="avatar g">AL</div><div class="body"><b>${esc(ME.name)}</b><div class="meta">${esc(ME.spec)}, ${esc(ME.practice)}. Connected through this ${esc(TYPE_LABEL[r.type].toLowerCase())}</div></div></div></div>
-  <div class="box"><h3>Your requests</h3><div class="kvrow"><span>${esc(TYPE_LABEL[r.type])} from ${esc(ME.short)}</span><span class="status good">${r.type==='question'?'Answered':'Accepted'}</span></div>${pt?`<p style="margin:8px 0 4px"><b>${esc(pt.name)}</b>, ${pt.age}${pt.sex}. ${esc(r.topic)}</p>`:`<p style="margin:8px 0 4px">${esc(r.topic)}</p>`}
+  <div class="box"><h3>Your requests</h3><div class="kvrow"><span>${esc(TYPE_LABEL[r.type])} from ${esc(ME.short)}</span><span class="status good">${r.type==='question'?'Answered':'Accepted'}</span></div>${pt?`<p style="margin:8px 0 4px">${r.consent&&r.consent.status==='signed'?`<b>${esc(pt.name)}</b>, DOB ${esc(pt.dob)}. `:'Patient details arrive after the patient consents. '}${esc(r.topic)}</p>`:`<p style="margin:8px 0 4px">${esc(r.topic)}</p>`}
   ${r.type==='referral'?(consult?'<p class="meta" style="margin:8px 0 0">Consult note sent back to Dr. Lee. The loop is closed.</p>':`<button class="btn small" data-action="rv-consult" style="margin-top:8px">Send consult note back</button>`):''}</div>
   </div><div>
   <div class="box"><h3>How colleagues reach you</h3><p style="margin:0">${on(v.prefs).map(k=>CONTACT_LABEL[k][0].toUpperCase()+CONTACT_LABEL[k].slice(1)).join(', ')||'No channels selected'}</p><p class="meta" style="margin:4px 0 0">Never by text message.</p></div>
@@ -348,6 +365,24 @@ function privacyBox(f){
   if(pv.status==='checking') return `<div id="privacy-box" class="pcheck" aria-live="polite">${head({ai:'ai',patterns:'patterns',off:'offline'}[AI.status])}<p class="meta" style="margin:0">Checking the draft for patient identifiers and clinical details that cannot be shared by fax…</p></div>`;
   if(!pv.flags.length) return `<div id="privacy-box" class="pcheck ok" aria-live="polite">${head(pv.mode)}<p style="margin:0">No patient identifiers or prohibited clinical details found.</p></div>`;
   return `<div id="privacy-box" class="pcheck warn" aria-live="polite">${head(pv.mode)}<p style="margin:6px 0">${pv.flags.length} ${pv.flags.length===1?'item was':'items were'} flagged and sending is blocked:</p><ul class="pflags">${pv.flags.map(x=>`<li><mark>${esc(x.text)}</mark><span>${esc(x.reason)}</span></li>`).join('')}</ul><p class="meta" style="margin:8px 0 0">Remove the flagged content. The privacy check will rerun as you edit.</p></div>`;
+}
+/* ---------- Consent review (Dr. Lee approves the auto-filled form before it goes to the patient) ---------- */
+function consentModal(){
+  const v=S.consent, r=S.requests.find(x=>x.id===v.id); if(!r) return '';
+  const p=doc(r.to), pt=pat(r.patient), fields=consentFields(pt);
+  const box=x=>`<label class="check ${x.locked?'locked':''}"><input type="checkbox" data-consent-field="${x.id}" ${r.consent.fields.includes(x.id)?'checked':''} ${x.locked?'disabled':''}><span>${esc(x.label)}</span></label>`;
+  let body;
+  if(v.loading) body='<p class="meta">Filling in the authorization form…</p>';
+  else if(v.offline) body=`<div class="disclaimer">The consent service needs the backend, which isn't running. Start it to email the form, or simulate the patient's signature for this demo.</div>`;
+  else body=`<div class="consent-doc">${v.html}</div>`;
+  const to=v.offline?'':v.emailReady?`Emailed to the patient's address on file (${esc(v.to)}).`:'Email is not set up in backend/.env, so the secure link will be shown in the app instead.';
+  return `<div class="overlay"><div class="modal consent-modal" role="dialog" aria-modal="true" aria-labelledby="cm-title">
+  <h2 id="cm-title">Review consent form</h2><p class="lead">${esc(p.name)} accepted your referral for ${esc(pt.initials)} This authorization goes to the patient. Nothing is shared until they sign.</p>
+  <div class="box"><h3>Information the patient is asked to release to ${esc(shortName(p))}</h3>${fields.map(box).join('')}</div>
+  ${body}
+  <p class="meta">${to}</p>
+  <label class="approve"><input type="checkbox" data-bind="consent-approve" ${v.approved?'checked':''} ${v.loading?'disabled':''}><span>I reviewed the physician details and the information listed, and I approve sending this form to the patient.</span></label>
+  <div class="modal-foot"><button class="btn ghost" data-action="consent-close">Cancel</button>${v.offline?`<button class="btn" data-action="consent-simulate" ${v.approved?'':'disabled'}>Simulate sending</button>`:`<button class="btn" data-action="consent-send" ${v.approved&&!v.sending?'':'disabled'}>${v.sending?'Sending…':'Send to patient'}</button>`}</div></div></div>`;
 }
 function stepTrack(f){
   const r=S.requests.find(x=>x.id===f.reqId); if(!r) return '';

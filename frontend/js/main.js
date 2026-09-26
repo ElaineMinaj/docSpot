@@ -3,6 +3,13 @@
 'use strict';
 
 function toast(msg){ const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.getElementById('toasts').appendChild(t); setTimeout(()=>t.remove(),4200); }
+// A larger notification that stays longer, for events Dr. Lee shouldn't miss (like patient consent).
+function notify(title,msg,tone){
+  const t=document.createElement('div'); t.className='toast big '+(tone||'good'); t.setAttribute('role','status');
+  t.innerHTML=`<span class="ticon" aria-hidden="true">${tone==='bad'?'!':'✓'}</span><div><b>${esc(title)}</b><div>${esc(msg)}</div></div><button class="tclose" aria-label="Dismiss">×</button>`;
+  t.querySelector('.tclose').onclick=()=>t.remove();
+  document.getElementById('toasts').appendChild(t); setTimeout(()=>t.remove(),12000);
+}
 
 function render(){
   document.getElementById('topbar').innerHTML=renderTop();
@@ -14,9 +21,9 @@ function render(){
   root.innerHTML=viewSheet();
   const nb=root.querySelector('.sheet-body'); if(nb&&S.flow&&S.flow._keepScroll) nb.scrollTop=top;
   const mr=document.getElementById('modal-root'), rvTop=mr.querySelector('.rv-screen')?mr.querySelector('.rv-screen').scrollTop:0;
-  mr.innerHTML=S.rv?recipientFlow():'';
+  mr.innerHTML=S.rv?recipientFlow():S.consent?consentModal():'';
   if(S.rv){ const sc=mr.querySelector('.rv-screen'); if(S.rv._focus){ S.rv._focus=false; const h=document.getElementById('rv-title'); if(h) h.focus(); } else if(sc) sc.scrollTop=rvTop; }
-  document.body.style.overflow=S.flow||S.rv?'hidden':'';
+  document.body.style.overflow=S.flow||S.rv||S.consent?'hidden':'';
 }
 
 /* ---------- Privacy check: runs whenever the draft or the checked fields change ---------- */
@@ -77,7 +84,7 @@ document.addEventListener('click',e=>{
   const a=t.dataset.action, id=t.dataset.id, f=S.flow;
   if(f) f._keepScroll=false;
   switch(a){
-    case 'reset': resetState(); S.rv=null; render(); toast('Demo reset.'); break;
+    case 'reset': resetState(); S.rv=null; S.consent=null; render(); toast('Demo reset.'); break;
     case 'select': S.mapSel=id; render(); break;
     case 'mapview': S.mapView=t.dataset.v; render(); break;
     case 'specfilter': S.specFilter=S.specFilter===t.dataset.s?null:t.dataset.s; render(); break;
@@ -131,6 +138,19 @@ document.addEventListener('click',e=>{
     case 'rv-joinyes': S.rv.joinYes=true; render(); break;
     case 'rv-joinno': { const v=S.rv; recipientSkipJoin(findReq(v.id)); v.skipped=true; v.step=4; v._focus=true; render(); break; }
     case 'rv-join': { const v=S.rv; v.step=4; v._focus=true; recipientJoin(findReq(v.id),{prefs:v.prefs,services:v.services},render); break; }
+    // Consent: Dr. Lee reviews the auto-filled form, then it is emailed to the patient
+    case 'consent-open': S.consent={id, loading:true, approved:false}; render(); loadConsentPreview(); break;
+    case 'consent-close': S.consent=null; render(); break;
+    case 'consent-send': {
+      const v=S.consent, r=findReq(v.id); if(!v.approved||v.sending) return;
+      v.sending=true; render();
+      consentSend(consentPayload(r,true)).then(res=>{
+        consentSent(r,res); S.consent=null; render();
+        toast(res.emailed?`Consent form emailed to the patient (${res.to}).`:'Consent form ready. Email isn\u2019t set up, so use "Open patient\u2019s form".');
+      }).catch(()=>{ v.sending=false; v.offline=true; render(); toast('Couldn\u2019t reach the backend to send the form.'); });
+      break; }
+    case 'consent-simulate': { const r=findReq(S.consent.id); consentSent(r,{simulated:true}); S.consent=null; render(); break; }
+    case 'consent-simsign': { const r=findReq(id); consentResult(r,'signed',{name:pat(r.patient).name,at:clock(Date.now())}); render(); notify('Patient consented',consentMessage(r,'signed'),'good'); break; }
     case 'rv-consult': sendConsultNote(findReq(S.rv.id)); render(); toast('Consult note sent to Dr. Lee (simulated).'); break;
     case 'retry': { const r=findReq(id); addEvent(r,'Dr. Lee chose to retry the send'); sendRequest(r,render); break; }
     case 'editfax': S.editing=id; S.expanded=id; render(); break;
@@ -143,6 +163,12 @@ document.addEventListener('click',e=>{
 document.addEventListener('change',e=>{
   const el=e.target, f=S.flow;
   if(el.dataset.bind==='outside'){ S.showOutside=el.checked; render(); return; }
+  if(el.dataset.bind==='consent-approve'&&S.consent){ S.consent.approved=el.checked; render(); return; }
+  if(el.dataset.consentField&&S.consent){
+    const r=findReq(S.consent.id), k=el.dataset.consentField;
+    r.consent.fields=el.checked?[...new Set([...r.consent.fields,k])]:r.consent.fields.filter(x=>x!==k);
+    S.consent.approved=false; loadConsentPreview(); return;
+  }
   if(el.dataset.rv&&S.rv){
     const v=S.rv, k=el.dataset.rv;
     if(k==='verified') v.verified=el.checked;
@@ -176,9 +202,28 @@ document.addEventListener('submit',e=>{
 });
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&S.rv){ S.rv=null; render(); return; }
+  if(e.key==='Escape'&&S.consent){ S.consent=null; render(); return; }
   if(e.key==='Escape'&&S.flow){ S.flow=null; render(); }
   if((e.key==='Enter'||e.key===' ')&&e.target.matches('g[role="button"][data-action]')){ e.preventDefault(); e.target.dispatchEvent(new MouseEvent('click',{bubbles:true})); }
 });
+
+// Fill in the form from the template on the backend. Rerun when the released items change.
+async function loadConsentPreview(){
+  const v=S.consent; if(!v) return;
+  v.loading=true; render();
+  try{ const res=await consentPreview(consentPayload(findReq(v.id),false)); if(S.consent!==v) return; Object.assign(v,{html:res.html, to:res.to, emailReady:res.email_ready, offline:false}); }
+  catch(e){ if(S.consent!==v) return; v.offline=true; }
+  v.loading=false; render();
+}
+// Check every few seconds whether a patient has signed. Patient information is released only then.
+setInterval(async()=>{
+  for(const r of S.requests.filter(x=>x.consent&&x.consent.status==='sent'&&x.consent.token)){
+    try{
+      const st=await consentStatus(r.consent.token);
+      if(st.status==='signed'||st.status==='declined'){ consentResult(r,st.status,st.signed); render(); notify(st.status==='signed'?'Patient consented':'Patient declined consent',consentMessage(r,st.status),st.status==='signed'?'good':'bad'); }
+    }catch(e){ /* backend off or restarted: keep waiting */ }
+  }
+},3000);
 
 resetState();
 render();

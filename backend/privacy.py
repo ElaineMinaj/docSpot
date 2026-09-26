@@ -71,11 +71,11 @@ def pattern_check(text, patient=None, approved=None, topic="", allowed=None):
             # Skip "Dr. Price" when the patient's surname is also a physician's name
             for m in re.finditer(r"(?<!\w)" + re.escape(part) + r"(?!\w)", text, re.I):
                 if not re.search(r"\bDr\.?\s*$", text[:m.start()]):
-                    add(m.group(0), "Patient name. Identifiers are released through the secure link only after the physician accepts.", "identifier")
+                    add(m.group(0), "Patient name. Identifiers are released only after the patient consents.", "identifier")
                     break
         dob = patient.get("dob")
         if dob and find_phrase(dob):
-            add(find_phrase(dob), "Patient date of birth. Released only after the physician accepts.", "identifier")
+            add(find_phrase(dob), "Patient date of birth. Released only after the patient consents.", "identifier")
         mrn_digits = re.sub(r"\D", "", patient.get("mrn") or "")
         if len(mrn_digits) >= 3:
             m = re.search(r"(?<!\d)" + mrn_digits + r"(?!\d)", text)

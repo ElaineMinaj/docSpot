@@ -176,9 +176,9 @@ function draftText(f){
   const greet=`${shortName(p)},`;
   const sign=`\n\nThank you,\n${ME.name}, ${ME.spec}\n${ME.practice}, ${ME.city}\nNPI ${ME.npi}`;
   const concern=pt?generalConcern(pt,p.spec)[1]:'';
-  if(f.type==='referral') return `${greet}\n\nI'd like to refer a patient for ${f.topic.toLowerCase()}${concern?` concerning ${concern}`:''}.\n\nIt would be great if you could please assess this concern and share recommendations for appropriate next steps. Patient identifiers will be shared through the secure response page after acceptance.${sign}`;
-  if(f.type==='collab') return `${greet}\n\nI'd value a brief discussion to coordinate care${concern?` regarding a patient with ${concern}`:''}.\n\nTopic: ${f.topic}. A brief reply by scanning the QR code on this fax, or by the fax-back form, is plenty. Patient identifiers will be shared through the secure response page after acceptance.${sign}`;
-  if(f.type==='question') return `${greet}\n\nA colleague question I thought you'd be well placed to answer:\n\n"${f.question}"${concern?`\n\nGeneral concern: ${concern}.`:''}\n\nA brief reply by scanning the QR code on this fax, or by the fax-back form, is plenty. Patient identifiers will be shared through the secure response page after acceptance.${sign}`;
+  if(f.type==='referral') return `${greet}\n\nI'd like to refer a patient for ${f.topic.toLowerCase()}${concern?` concerning ${concern}`:''}.\n\nIt would be great if you could please assess this concern and share recommendations for appropriate next steps. If you accept, the patient will be asked to consent before their details are shared with you.${sign}`;
+  if(f.type==='collab') return `${greet}\n\nI'd value a brief discussion to coordinate care${concern?` regarding a patient with ${concern}`:''}.\n\nTopic: ${f.topic}. A brief reply by scanning the QR code on this fax, or by the fax-back form, is plenty. If you accept, the patient will be asked to consent before their details are shared with you.${sign}`;
+  if(f.type==='question') return `${greet}\n\nA colleague question I thought you'd be well placed to answer:\n\n"${f.question}"${concern?`\n\nGeneral concern: ${concern}.`:''}\n\nA brief reply by scanning the QR code on this fax, or by the fax-back form, is plenty. If you accept, the patient will be asked to consent before their details are shared with you.${sign}`;
   return `${greet}\n\nI'd like to connect with you on Colleague Connect, a secure way for physicians to share referrals and questions. It takes about a minute to accept, and there's no cost.${sign}`;
 }
 
@@ -210,6 +210,52 @@ function draftRequest(f){
 }
 const DRAFT_LABEL = {ai:'AI draft. Review before sending.', template:'Privacy-safe template. Review before sending.'};
 
+/* ---------- Patient consent (gated release, see backend/consent.py) ---------- */
+// What the patient is asked to release to the specialist. Name and DOB are always part of it.
+function consentFields(pt){
+  return [
+    {id:'identity',label:'Name and date of birth',release:'Your name and date of birth',on:true,locked:true},
+    {id:'dx',label:'Diagnoses related to this referral',release:'Diagnoses related to this referral',on:true},
+    {id:'meds',label:'Current medications',release:'Your current medications',on:true},
+    {id:'labs',label:'Recent lab results',release:'Your recent lab results',on:true}
+  ];
+}
+function consentPayload(r,approved){
+  const p=doc(r.to), pt=pat(r.patient), person=x=>({name:x.name, specialty:x.spec, practice:x.real?x.address:x.practice, city:x.city||'', npi:x.npi||'', fax:x.fax||'', phone:x.phone||''});
+  const released=consentFields(pt).filter(x=>r.consent.fields.includes(x.id)).map(x=>x.release);
+  const purpose=r.accessMode==='trial'?'clinical_trial_eligibility':r.accessMode==='telehealth'?'telehealth_evaluation':'specialty_evaluation';
+  return {request_id:r.id, patient_name:pt.name, patient_dob:pt.dob, sender:person(ME), recipient:person(p), purpose, released, approved_by_physician:!!approved};
+}
+function consentSent(r,res){
+  r.consent.status='sent'; r.consent.token=res.token; r.consent.link=res.link; r.consent.emailed=!!res.emailed; r.consent.simulated=!!res.simulated;
+  addEvent(r,'Dr. Lee reviewed and approved the consent form');
+  addEvent(r,res.simulated?'Consent form sent to the patient (simulated: backend off)':res.emailed?`Consent form emailed to the patient at ${res.to}`:'Consent form ready. Email is not set up, so the secure link is shown in the app');
+  log(`Consent form sent to ${pat(r.patient).initials} for ${doc(r.to).name}`,'wait');
+}
+// The only place patient information is released: after the patient signs.
+function consentResult(r,status,signed){
+  const p=doc(r.to), pt=pat(r.patient);
+  if(status==='signed'){
+    r.consent.status='signed'; r.consent.signed=signed;
+    addEvent(r,`Patient signed the authorization${signed&&signed.name?` (${signed.name}, ${signed.at})`:''}${r.consent.simulated?' (simulated)':''}`);
+    const released=consentFields(pt).filter(x=>r.consent.fields.includes(x.id)).map(x=>x.label.toLowerCase());
+    addEvent(r,`Approved information sent to ${p.name}: ${released.join(', ')}. Colleague Connect's part is complete`);
+    if(!pt.careTeam.includes(p.id)) pt.careTeam.push(p.id);
+    log(consentMessage(r,'signed'),'good');
+  } else {
+    r.consent.status='declined';
+    addEvent(r,'Patient did not authorize sharing. No patient information was released');
+    log(consentMessage(r,'declined'),'bad');
+  }
+}
+// Notification for Dr. Lee. She is the patient's own physician, so the patient's name is shown.
+function consentMessage(r,status){
+  const p=doc(r.to), pt=pat(r.patient);
+  return status==='signed'?`${pt.name} (${pt.initials}) consented to share their information with ${p.name}. It has been sent`
+    :`${pt.name} (${pt.initials}) did not consent to share their information with ${p.name}. Nothing was sent`;
+}
+const CONSENT_LABEL = {review:['Review consent form','wait'], sent:['Waiting for patient consent','wait'], signed:['Patient consented, information sent','good'], declined:['Patient declined consent','bad']};
+
 /* ---------- Request lifecycle ---------- */
 // Existing Impiricus service: route a question to the manufacturer's medical team (MSL / medical information).
 function createMslRequest(drug,question,patientId){
@@ -223,7 +269,7 @@ function createMslRequest(drug,question,patientId){
 function createRequest(f){
   const p=doc(f.to);
   const r={id:'CC-'+(++S.seq), type:f.type, to:f.to, patient:f.patient||null, topic:f.type==='question'?f.question:f.topic,
-    method:'fax', wasConnected:p.rel==='connected'||p.rel==='joining', status:'draft', created:Date.now(), attempts:0, events:[], faxText:f.text, fields:f.fields.filter(x=>x.on).map(x=>x.label), code:'A7K-'+S.seq};
+    method:'fax', wasConnected:p.rel==='connected'||p.rel==='joining', accessMode:f.accessMode||null, status:'draft', created:Date.now(), attempts:0, events:[], faxText:f.text, fields:f.fields.filter(x=>x.on).map(x=>x.label), code:'A7K-'+S.seq};
   const what=r.method==='fax'?'fax':'message';
   addEvent(r,f.draftSource==='ai'?`AI drafted the ${what} (${f.draftModel||'AI model'}) from the checked information only`:`AI drafted the ${what} (simulated: template, AI backend off or slow)`);
   if(f.edited) addEvent(r,'Dr. Lee edited the draft');
@@ -273,7 +319,11 @@ function recipientRespond(r,{choice,reply},rerender){
   r.status='accepted'; if(!member){ p.rel='outside'; p.link=`${r.type==='question'?'Answered':'Accepted'} your ${label}`; }
   addEvent(r,`${p.name} ${r.type==='question'?'answered':'accepted'} ${via}`);
   if(reply) addEvent(r,`Reply: "${reply}"`);
-  if(r.patient){ const pt=pat(r.patient); if(!pt.careTeam.includes(p.id)) pt.careTeam.push(p.id); addEvent(r,'Patient name and date of birth released to the accepting physician'); }
+  if(r.patient&&r.type==='referral'){
+    r.consent={status:'review', fields:consentFields(pat(r.patient)).filter(x=>x.on).map(x=>x.id)};
+    addEvent(r,'Consent form generated from the authorization template. No patient information released yet');
+    addEvent(r,'Waiting for Dr. Lee to review the consent form before it is emailed to the patient');
+  }
   log(`${p.name} ${r.type==='question'?'answered':'accepted'} your ${label}`,'good'); rerender();
 }
 const CONTACT_LABEL = {fax:'fax', inapp:'in-app messages', email:'email'};

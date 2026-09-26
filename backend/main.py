@@ -19,10 +19,12 @@ from pydantic import BaseModel, ConfigDict, Field  # noqa: E402
 
 import ai  # noqa: E402
 from privacy import pattern_check  # noqa: E402
+from consent import router as consent_router  # noqa: E402
 
 app = FastAPI(title="Colleague Connect AI")
 # Local prototype: the page is opened from Live Server or straight from disk
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.include_router(consent_router)
 
 
 @app.get("/health")
