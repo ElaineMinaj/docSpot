@@ -1,0 +1,9 @@
+# Secrets: the Anthropic API key lives here and must never be committed
+backend/.env
+
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+
+.DS_Store

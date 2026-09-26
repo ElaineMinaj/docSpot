@@ -159,6 +159,43 @@ function draftText(f){
   return `${greet}\n\nI'd like to connect with you on Colleague Connect, a secure way for physicians to share referrals and questions. It takes about a minute to accept, and there's no cost.${sign}`;
 }
 
+/* ---------- Privacy check (see api.js) ---------- */
+// Only mock patient data from data.js is ever sent.
+function privacyRequest(f){
+  const p=doc(f.to), pt=f.patient?pat(f.patient):null;
+  return {text:f.text, approved:f.fields.filter(x=>x.on).map(x=>x.id), topic:f.type==='question'?f.question:f.topic,
+    patient:pt?{name:pt.name,dob:pt.dob,mrn:pt.mrn,age:pt.age,sex:pt.sex,dx:pt.dx,meds:pt.meds,labs:pt.labs}:null,
+    allowed:[ME.fax,RETURN_FAX,p.fax,p.phone].filter(Boolean)};
+}
+// Approval unlocks once the check has finished and found nothing, or the physician kept the flagged text.
+const privacyClear = f => !!f.privacy&&f.privacy.status==='done'&&(!f.privacy.flags.length||f.privacy.override);
+const FLAG_KIND = {identifier:'patient identifier', contact:'contact detail', unapproved:'unapproved clinical detail', ai:'other detail'};
+function privacyAudit(r,pv){
+  if(!pv||pv.status!=='done') return;
+  // The audit trail records what kind of item was flagged, not the flagged text itself.
+  const kinds=[...new Set(pv.flags.map(x=>FLAG_KIND[x.kind]||'other detail'))];
+  addEvent(r,`${PRIVACY_LABEL[pv.mode]}: ${pv.flags.length?`flagged ${pv.flags.length} ${pv.flags.length===1?'item':'items'} (${kinds.join(', ')})`:'no issues found'}`);
+  if(pv.flags.length&&pv.override) addEvent(r,'Dr. Lee reviewed the flagged items and chose to keep them ("This is fine, keep it")');
+}
+
+// What goes to the AI draft endpoint: the checked fields only, never name, DOB, or MRN.
+function draftRequest(f){
+  const p=doc(f.to), pt=f.patient?pat(f.patient):null, on=id=>(f.fields.find(x=>x.id===id)||{}).on;
+  const shared={};
+  if(pt){
+    if(on('agesex')) shared.agesex=`${pt.age}, ${pt.sex==='F'?'female':'male'}`;
+    if(on('dx')) shared.dx=pt.dx;
+    if(on('meds')) shared.meds=pt.meds;
+    if(on('labs')) shared.labs=pt.labs;
+    const sd=supportDrug(pt);
+    if(sd&&on('support')) shared.support=`The ${sd} manufacturer offers ${MANUFACTURER_RESOURCES[sd].program}, available through Impiricus (link included with the secure referral).`;
+  }
+  const person=x=>({name:x.name, specialty:x.spec, practice:x.practice, city:x.city||'', npi:x.npi||''});
+  return {type:f.type, channel:p.rel==='connected'||p.rel==='joining'?'in-app':'fax', recipient:person(p),
+    recipient_on_impiricus:p.rel==='connected'||p.rel==='joining', sender:person(ME), topic:f.topic, question:f.question||'', shared};
+}
+const DRAFT_LABEL = {ai:'AI draft. Review before sending.', template:'AI draft, simulated: template (AI backend off or slow). Review before sending.'};
+
 /* ---------- Request lifecycle ---------- */
 // Existing Impiricus service: route a question to the manufacturer's medical team (MSL / medical information).
 function createMslRequest(drug,question,patientId){
@@ -173,8 +210,10 @@ function createRequest(f){
   const p=doc(f.to);
   const r={id:'CC-'+(++S.seq), type:f.type, to:f.to, patient:f.patient||null, topic:f.type==='question'?f.question:f.topic,
     method:p.rel==='connected'||p.rel==='joining'?'in-app':'fax', status:'draft', created:Date.now(), attempts:0, events:[], faxText:f.text, fields:f.fields.filter(x=>x.on).map(x=>x.label)};
-  addEvent(r,'AI drafted the '+(r.method==='fax'?'fax':'message')+' (simulated)');
+  const what=r.method==='fax'?'fax':'message';
+  addEvent(r,f.draftSource==='ai'?`AI drafted the ${what} (${f.draftModel||'AI model'}) from the checked information only`:`AI drafted the ${what} (simulated: template, AI backend off or slow)`);
   if(f.edited) addEvent(r,'Dr. Lee edited the draft');
+  privacyAudit(r,f.privacy);
   addEvent(r,`Dr. Lee confirmed information to share: ${r.fields.join(', ')}`);
   addEvent(r,`Dr. Lee approved recipient ${p.name}${r.method==='fax'?' at '+p.fax:''}`);
   S.requests.unshift(r);

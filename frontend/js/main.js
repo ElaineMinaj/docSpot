@@ -16,12 +16,51 @@ function render(){
   document.body.style.overflow=S.flow?'hidden':'';
 }
 
+/* ---------- Privacy check: runs whenever the draft or the checked fields change ---------- */
+let privacyTimer=null, privacySeq=0;
+function runPrivacyCheck(delay){
+  const f=S.flow; if(!f||!f.to) return;
+  clearTimeout(privacyTimer);
+  const seq=++privacySeq;
+  f.privacy={status:'checking',flags:[],mode:null,override:false}; f.approved=false;
+  updatePrivacyUI();
+  privacyTimer=setTimeout(async()=>{
+    const text=f.text, res=await privacyCheck(privacyRequest(f));
+    if(seq!==privacySeq||S.flow!==f||f.text!==text) return;   // a newer check or edit replaced this one
+    f.privacy={status:'done',flags:res.flags,mode:res.mode,override:false};
+    updatePrivacyUI();
+  },delay||0);
+}
+// Update only the privacy panel and the approval controls, so the textarea keeps focus while typing.
+function updatePrivacyUI(){
+  const f=S.flow, box=document.getElementById('privacy-box'); if(!f) return;
+  if(box) box.outerHTML=privacyBox(f);
+  const c=document.querySelector('[data-bind="approve"]'); if(c){ c.disabled=!privacyClear(f); c.checked=!!f.approved; }
+  const s=document.querySelector('[data-action="send"]'); if(s) s.disabled=!f.approved;
+}
+
+/* ---------- AI draft: Claude through the backend, template if it's off or slower than ~6s ---------- */
+let draftSeq=0;
+async function generateDraft(){
+  const f=S.flow; if(!f||!f.to) return;
+  const seq=++draftSeq;
+  clearTimeout(privacyTimer); privacySeq++;          // cancel any check of the old draft
+  f.drafting=true; f.approved=false; f.privacy={status:'checking',flags:[],mode:null,override:false};
+  const res=await aiDraft(draftRequest(f));
+  if(seq!==draftSeq||S.flow!==f) return;              // a newer draft request replaced this one
+  if(res){ f.text=res.text; f.draftSource='ai'; f.draftModel=res.model; }
+  else { f.text=draftText(f); f.draftSource='template'; f.draftModel=null; }
+  f.drafting=false; f.edited=false; f._keepScroll=true;
+  render(); runPrivacyCheck(0);
+}
+
 const COLLAB_TOPICS = {pt2:'Next step after semaglutide with A1c still above goal', pt3:'Anticoagulation plan with declining kidney function', pt6:'Evaluating new joint pain during infliximab treatment'};
 function stepIndex(name){ return STEP_NAMES[S.flow.type](S.flow.fixedTo).indexOf(name); }
 function prepareReview(){
   const f=S.flow, pt=f.patient?pat(f.patient):null;
-  f.fields=shareFields(f.type,pt); f.text=draftText(f); f.edited=false; f.approved=false; f.showPreview=false;
+  f.fields=shareFields(f.type,pt); f.text=''; f.edited=false; f.approved=false; f.showPreview=false;
   f.step=stepIndex('Review and approve');
+  generateDraft();
 }
 function startFlow(type,to){
   S.flow={type,step:0,fixedTo:to||null,to:to||null,mode:'patient',patient:null,drug:null,question:'',topic:type==='connect'?'Invitation to connect':'',fields:[],text:'',edited:false,approved:false};
@@ -59,7 +98,8 @@ document.addEventListener('click',e=>{
       f.question=q;
       if(f.fixedTo){ f.to=f.fixedTo; prepareReview(); } else f.step++;
       render(); break; }
-    case 'regen': f.text=draftText(f); f.edited=false; f.approved=false; render(); toast('Draft regenerated from the checked information.'); break;
+    case 'regen': generateDraft(); f._keepScroll=true; render(); break;
+    case 'privacy-ok': if(f&&f.privacy){ f.privacy.override=true; updatePrivacyUI(); } break;
     case 'preview': f.showPreview=!f.showPreview; f._keepScroll=true; render(); break;
     case 'send': {
       if(!f.approved) return;
@@ -91,17 +131,17 @@ document.addEventListener('change',e=>{
   const el=e.target, f=S.flow;
   if(el.dataset.bind==='outside'){ S.showOutside=el.checked; render(); return; }
   if(!f) return;
-  if(el.dataset.bind==='approve'){ f.approved=el.checked; f._keepScroll=true; render(); return; }
+  if(el.dataset.bind==='approve'){ f.approved=el.checked&&privacyClear(f); f._keepScroll=true; render(); return; }
   if(el.dataset.field){
     const fld=f.fields.find(x=>x.id===el.dataset.field); fld.on=el.checked; f.approved=false; f._keepScroll=true;
-    if(!f.edited) f.text=draftText(f); else toast('You edited the draft, so it wasn\u2019t changed. Use Regenerate to rebuild it.');
+    if(!f.edited) generateDraft(); else { toast('You edited the draft, so it wasn\u2019t changed. Use Regenerate to rebuild it.'); runPrivacyCheck(0); }
     render();
   }
 });
 document.addEventListener('input',e=>{
   const el=e.target, f=S.flow; if(!f) return;
-  if(el.dataset.bind==='text'){ f.text=el.value; f.edited=true; if(f.approved){ f.approved=false; const c=document.querySelector('[data-bind="approve"]'); if(c) c.checked=false; const s=document.querySelector('[data-action="send"]'); if(s) s.disabled=true; } }
-  if(el.dataset.bind==='topic'){ f.topic=el.value; }
+  if(el.dataset.bind==='text'){ f.text=el.value; f.edited=true; runPrivacyCheck(700); }
+  if(el.dataset.bind==='topic'){ f.topic=el.value; runPrivacyCheck(700); }
   if(el.id==='q-text') f.question=el.value;
 });
 document.addEventListener('submit',e=>{
@@ -120,3 +160,4 @@ document.addEventListener('keydown',e=>{
 
 resetState();
 render();
+checkHealth();

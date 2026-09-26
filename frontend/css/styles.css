@@ -328,6 +328,16 @@ tr.expand td{background:var(--bg-2)}
 .fax .respond{border:1.5px solid var(--paper-ink);padding:10px 12px;margin-top:12px}
 .btn:disabled{opacity:.45;cursor:not-allowed;filter:none}
 .inline-input{display:flex;gap:8px;margin-top:8px}
+.pcheck{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:14px;font-size:14px}
+.pcheck.ok{border-color:rgba(60,203,154,.35)}
+.pcheck.warn{border-color:rgba(240,125,102,.55);background:rgba(240,125,102,.06)}
+.pcheck-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.pflags{list-style:none;margin:0;padding:0}
+.pflags li{display:flex;flex-direction:column;gap:2px;padding:6px 0;border-top:1px solid var(--line)}
+.pflags li:first-child{border-top:0}
+.pflags mark{align-self:flex-start;background:rgba(240,125,102,.18);color:var(--ink);border-radius:4px;padding:0 5px;font-weight:600}
+.pflags span{font-size:13px;color:var(--muted)}
+.approve:has(input:disabled){opacity:.6}
 @media (max-width:1100px){
   .summary,.netwrap,.review{grid-template-columns:1fr}
   .panel-card{position:static}
