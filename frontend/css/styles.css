@@ -339,6 +339,33 @@ tr.expand td{background:var(--bg-2)}
 .pflags span{font-size:13px;color:var(--muted)}
 .approve:has(input:disabled){opacity:.6}
 
+/* Your requests */
+.req-group{background:var(--surface);border:1px solid var(--line);border-radius:16px;margin-bottom:14px;overflow:hidden}
+.req-group h3{margin:0;padding:12px 16px 10px;font-size:14px;font-weight:700;display:flex;gap:8px;align-items:baseline}
+.req-group.attention{border-color:rgba(240,125,102,.5)}
+.req-group.attention h3{color:var(--danger)}
+.req{display:grid;grid-template-columns:36px minmax(0,1.5fr) minmax(0,1fr) 360px;gap:14px;align-items:center;padding:12px 16px;border-top:1px solid var(--line)}
+.req.open{background:var(--surface-2)}
+.req-what{font-size:13.5px;color:var(--muted);margin-top:2px}
+.req-what b{color:var(--ink)}
+.req-status .meta{margin-top:4px}
+.req-acts{justify-content:flex-end;align-items:center}
+.req-detail{background:var(--surface-2);padding:4px 16px 14px 66px;border-top:1px dashed var(--line)}
+.req-steps{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.req-steps li{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:3px 10px 3px 4px}
+.req-steps li i{font-style:normal;width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:var(--bg-2);font-size:11px;font-weight:800}
+.req-steps li.done i{background:var(--connected);color:#0A1224}
+.req-steps li.now{color:var(--ink);border-color:var(--accent)}
+.req-steps li.now i{background:var(--accent);color:var(--accent-ink)}
+.req-steps li.fail{color:var(--danger);border-color:rgba(240,125,102,.55)}
+.req-steps li.fail i{background:var(--danger);color:#fff}
+@media (max-width:900px){
+  .req{grid-template-columns:auto minmax(0,1fr)}
+  .req-status,.req-acts{grid-column:2}
+  .req-acts{justify-content:flex-start}
+  .req-detail{padding-left:16px}
+}
+
 /* Recipient's side walkthrough */
 .rv-screen{position:fixed;inset:0;z-index:55;background:var(--bg);overflow:auto;padding:calc(18px + env(safe-area-inset-top,0px)) 24px calc(40px + env(safe-area-inset-bottom,0px))}
 .rv-inner{max-width:1100px;margin:0 auto}

@@ -103,10 +103,6 @@ function viewActions(){
 }
 
 /* ---------- 4. Connection and referral flow ---------- */
-function progressDots(r){
-  const st=STATUS[r.status], stage=st.stage;
-  return `<div class="dots" aria-label="Stage ${stage+1} of 6: ${esc(st.label)}">${FLOW_STEPS.map((_,i)=>{let c='';if(i<stage||(st.done&&i===stage&&r.status!=='declined'))c='done';else if(i===stage)c=st.tone==='bad'?'fail':'on';if(r.method!=='fax'&&i===5)c='';return `<i class="${c}" title="${esc(FLOW_STEPS[i])}"></i>`;}).join('')}</div>`;
-}
 function reqActions(r){
   if(r.status==='failed') return `<button class="btn small" data-action="retry" data-id="${r.id}">Retry send</button><button class="btn ghost small" data-action="editfax" data-id="${r.id}">Update fax number</button>`;
   if(r.status==='delivered'&&r.method==='fax') return `<button class="btn ghost small" data-action="recipient" data-id="${r.id}">Open recipient's view</button> <span class="sim">Simulated</span>`;
@@ -115,19 +111,44 @@ function reqActions(r){
   if(r.status==='sending') return '<span class="meta">Sending…</span>';
   return '';
 }
-function viewFlow(){
-  const active=S.requests.filter(r=>!STATUS[r.status].done);
-  const counts=FLOW_STEPS.map((_,i)=>active.filter(r=>STATUS[r.status].stage===i).length);
-  const bad=FLOW_STEPS.map((_,i)=>active.some(r=>STATUS[r.status].stage===i&&STATUS[r.status].tone==='bad'));
-  let h=`<section class="section" aria-labelledby="h-flow"><div class="section-head"><h2 id="h-flow">What happens next</h2><p>Every request moves through the same six steps. ${SIM} Fax delivery in this prototype is simulated; no fax provider is connected.</p></div>`;
-  h+=`<ol class="flow" style="list-style:none;padding:0;margin:0 0 14px">${FLOW_STEPS.map((t,i)=>`<li class="fstep ${counts[i]?'has':''} ${bad[i]?'bad':''}"><span class="n">${i+1}</span><b>${t}</b><div class="cnt">${bad[i]?'Needs attention':counts[i]?`${counts[i]} in progress`:i===5?`${S.phys.filter(p=>p.joinedVia).length} added today`:'None right now'}</div></li>`).join('')}</ol>`;
-  h+=`<div class="tablewrap"><table class="list"><caption class="meta" style="text-align:left;padding:10px 12px">Your requests. Select Audit trail to see every step, who approved it, and when.</caption><thead><tr><th scope="col">Request</th><th scope="col">Physician</th><th scope="col">Patient or topic</th><th scope="col">Status</th><th scope="col">Progress</th><th scope="col">Next step</th></tr></thead><tbody>`;
-  S.requests.forEach(r=>{
-    const p=r.to?doc(r.to):{name:r.toLabel,spec:r.toSub,fax:''}, pt=r.patient?pat(r.patient):null;
-    h+=`<tr id="row-${r.id}"><td><b>${TYPE_LABEL[r.type]}</b><div class="meta">${r.id}, ${r.method==='fax'?'fax':r.method==='impiricus'?'through Impiricus':'in-app'}</div></td><td>${esc(p.name)}<div class="meta">${esc(p.spec)}</div></td><td>${pt?`<b>${pt.initials}</b> `:''}<span class="meta">${esc(r.topic.length>60?r.topic.slice(0,57)+'…':r.topic)}</span></td><td>${statusPill(r.status)}${r.status==='failed'?`<div class="meta" style="color:var(--danger);margin-top:4px">${esc(r.failReason)}</div>`:''}</td><td>${progressDots(r)}</td><td><div class="acts">${reqActions(r)}<button class="btn link" data-action="audit" data-id="${r.id}" aria-expanded="${S.expanded===r.id}">Audit trail</button></div></td></tr>`;
-    if(S.expanded===r.id) h+=`<tr class="expand"><td colspan="6"><b style="font-size:13.5px">Audit trail for ${r.id}</b><ol class="audit">${r.events.map(e=>`<li><time>${clock(e[0])}</time>${esc(e[1])}</li>`).join('')}</ol>${S.editing===r.id?`<form class="inline-input" data-submit="fax" data-id="${r.id}"><input type="text" name="fax" value="${esc(p.fax)}" aria-label="Fax number for ${esc(p.name)}" style="max-width:220px"><button class="btn small" type="submit">Save and resend</button></form><p class="note">Resending uses the contents you already approved.</p>`:''}</td></tr>`;
+// Grouped by what Dr. Lee needs to do. The six steps and the audit trail live in each row's Details.
+const REQ_GROUPS = [
+  ['attention','Needs your attention',['failed','callback']],
+  ['waiting','Waiting on others',['draft','sending','delivered','joining']],
+  ['done','Completed',['responded','accepted','declined','added']]
+];
+function reqNote(r,p){
+  const via=r.method==='fax'?'fax':r.method==='impiricus'?'through Impiricus':'in-app message';
+  if(r.status==='failed') return `<span style="color:var(--danger)">${esc(r.failReason)}</span>`;
+  if(r.status==='callback') return `Call ${esc(p.phone||'their office')} to discuss`;
+  if(r.status==='joining') return 'Verifying their NPI to add them to your network';
+  if(r.status==='delivered') return `Sent by ${via} ${ago(r.created)}. Waiting for ${esc(r.to?shortName(p):'a reply')}`;
+  return `Sent by ${via} ${ago(r.created)}`;
+}
+function reqSteps(r){
+  const st=STATUS[r.status];
+  return `<ol class="req-steps" aria-label="Progress">${FLOW_STEPS.map((t,i)=>{
+    const done=i<st.stage||(st.done&&i===st.stage&&r.status!=='declined'), now=i===st.stage&&!done, skip=r.method!=='fax'&&i===5;
+    return `<li class="${skip?'':done?'done':now?(st.tone==='bad'?'fail':'now'):''}"><i>${done&&!skip?'✓':i+1}</i>${esc(t)}${skip?' (already connected)':''}</li>`;}).join('')}</ol>`;
+}
+function viewRequests(){
+  let h=`<section class="section" aria-labelledby="h-flow"><div class="section-head"><h2 id="h-flow">Your requests</h2><p>Reviewed by you, sent by secure fax or message, and tracked until the physician responds. ${SIM} No fax provider is connected.</p></div>`;
+  REQ_GROUPS.forEach(([key,title,statuses])=>{
+    const list=S.requests.filter(r=>statuses.includes(r.status)); if(!list.length) return;
+    h+=`<div class="req-group ${key}"><h3>${title} <span class="meta">${list.length}</span></h3>`;
+    list.forEach(r=>{
+      const p=r.to?doc(r.to):{name:r.toLabel,spec:r.toSub,fax:''}, pt=r.patient?pat(r.patient):null, open=S.expanded===r.id;
+      h+=`<div class="req ${open?'open':''}" id="row-${r.id}">
+        ${r.to?avatar(p):'<div class="avatar">MT</div>'}
+        <div class="req-main"><b>${esc(p.name)}</b> <span class="meta">${esc(p.spec)}</span><div class="req-what">${TYPE_LABEL[r.type]}${pt?` for <b>${pt.initials}</b>`:''}: ${esc(r.topic.length>70?r.topic.slice(0,67)+'…':r.topic)}</div></div>
+        <div class="req-status">${statusPill(r.status)}<div class="meta">${reqNote(r,p)}</div></div>
+        <div class="acts req-acts">${reqActions(r)}<button class="btn link" data-action="audit" data-id="${r.id}" aria-expanded="${open}">${open?'Hide details':'Details'}</button></div>
+      </div>`;
+      if(open) h+=`<div class="req-detail">${reqSteps(r)}${S.editing===r.id?`<form class="inline-input" data-submit="fax" data-id="${r.id}"><input type="text" name="fax" value="${esc(p.fax)}" aria-label="Fax number for ${esc(p.name)}" style="max-width:220px"><button class="btn small" type="submit">Save and resend</button></form><p class="note" style="margin-top:4px">Resending uses the contents you already approved.</p>`:''}<b style="font-size:13.5px;display:block;margin-top:12px">Audit trail <span class="meta">${r.id}</span></b><ol class="audit">${r.events.map(e=>`<li><time>${clock(e[0])}</time>${esc(e[1])}</li>`).join('')}</ol></div>`;
+    });
+    h+='</div>';
   });
-  return h+'</tbody></table></div></section>';
+  return h+'</section>';
 }
 
 /* ---------- Recipient's side (simulated): what the receiving physician experiences ---------- */
