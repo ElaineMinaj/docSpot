@@ -160,7 +160,7 @@ def draft(req: DraftRequest):
         return {"text": None, "reason": f"draft {problem}"}
     closing = ""
     if not req.recipient_on_impiricus:
-        closing = ("\n\nYou can reply through the secure link on this fax, no account needed. "
+        closing = ("\n\nTo reply, scan the QR code on this fax. No account needed. "
                    "You may also choose to join Impiricus (free, verified physicians only).")
     return {"text": f"{body.strip()}{closing}\n\n{_signature(req.sender)}", "model": ai.model()}
 

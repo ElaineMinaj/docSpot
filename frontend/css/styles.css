@@ -409,3 +409,8 @@ table.list tr.rv-hit:hover td{background:var(--accent-soft)}
 }
 
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* QR code on the fax */
+.fax .qr-row{display:flex;gap:12px;align-items:center;margin:8px 0 10px}
+.fax .qr{display:inline-block;background:#fff;line-height:0;flex:none}
+.fax .qr svg{width:96px;height:96px;display:block}

@@ -181,9 +181,9 @@ function draftText(f){
   const sd=supportDrug(pt);
   if(pt&&sd&&on('support')) lines.push(`Patient support: the ${sd} manufacturer offers ${MANUFACTURER_RESOURCES[sd].program}, available through Impiricus (link included with the secure referral).`);
   const ctx=lines.length?'\n\n'+lines.join('\n'):'';
-  if(f.type==='referral') return `${greet}\n\nI'd like to refer a patient for ${f.topic.toLowerCase()}.${ctx}\n\nRequest: evaluation and treatment recommendations. Patient identifiers will be shared through the secure link once you accept.${sign}`;
+  if(f.type==='referral') return `${greet}\n\nI'd like to refer a patient for ${f.topic.toLowerCase()}.${ctx}\n\nRequest: evaluation and treatment recommendations. Patient identifiers will be shared securely once you accept.${sign}`;
   if(f.type==='collab') return `${greet}\n\nWe both care for a patient, or you have experience with this treatment, and I'd value a short discussion.\n\nTopic: ${f.topic}${ctx}\n\nA 10-minute call or a few written notes would help. Patient identifiers are shared only after you accept.${sign}`;
-  if(f.type==='question') return `${greet}\n\nA colleague question I thought you'd be well placed to answer:\n\n"${f.question}"${ctx}\n\nA brief reply by the secure link or fax-back form is plenty.${sign}`;
+  if(f.type==='question') return `${greet}\n\nA colleague question I thought you'd be well placed to answer:\n\n"${f.question}"${ctx}\n\nA brief reply by scanning the QR code on this fax, or by the fax-back form, is plenty.${sign}`;
   return `${greet}\n\nI'd like to connect with you on Colleague Connect, a secure way for physicians to share referrals and questions. It takes about a minute to accept, and there's no cost.${sign}`;
 }
 
@@ -282,7 +282,7 @@ function recipientFaxText(r){
 }
 function recipientVerified(r){
   const p=doc(r.to);
-  addEvent(r,`${p.name} opened the secure link with the one-time code from the fax (simulated)`);
+  addEvent(r,`${p.name} scanned the QR code on the fax and opened the secure response page (simulated)`);
   addEvent(r,`${p.name} confirmed their identity against their NPI record${p.npi?' (NPI '+p.npi+')':''}`);
 }
 // Accepting and joining are separate choices, made on separate screens.

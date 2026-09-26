@@ -151,7 +151,7 @@ function viewRequests(){
 }
 
 /* ---------- Recipient's side (simulated): what the receiving physician experiences ---------- */
-const RV_STEPS = ['Fax arrives','Secure link','Respond','Join (optional)','Your account'];
+const RV_STEPS = ['Fax arrives','Scan QR code','Respond','Join (optional)','Your account'];
 function recipientFlow(){
   const v=S.rv, r=S.requests.find(x=>x.id===v.id); if(!r) return '';
   const p=doc(r.to), body=[rvInbox,rvLink,rvRespond,rvJoin,rvAccount][v.step](r,p,v);
@@ -175,13 +175,13 @@ function rvInbox(r,p,v){
   </tbody></table></div>
   <div>${faxPreview({type:r.type,text:recipientFaxText(r)},p,code)}</div></div>
   <p class="note">Marketing faxes get discarded. A colleague's request about a real patient gets routed to the physician.</p>
-  <div class="rv-foot"><span></span><button class="btn" data-action="rv-next" ${v.routed?'':'disabled'}>${esc(shortName(p))} opens the secure link</button></div>`;
+  <div class="rv-foot"><span></span><button class="btn" data-action="rv-next" ${v.routed?'':'disabled'}>${esc(shortName(p))} scans the QR code</button></div>`;
 }
 function rvLink(r,p,v){
   const code=r.code||'A7K-'+r.id.replace(/\D/g,'');
   return `<div class="rv-browser"><span class="dotrow"><i></i><i></i><i></i></span><span class="url">https://impiricus.example/cc/${esc(code)}</span></div>
-  <div class="box"><h2 id="rv-title" tabindex="-1" style="margin:0 0 4px;font-size:20px">Secure response</h2><p class="meta" style="margin:0 0 12px">No account needed. Enter the code printed on the fax, then confirm who you are.</p>
-  <label class="f" style="max-width:260px">One-time code<input type="text" value="${esc(code)}" readonly aria-describedby="code-note"></label><p id="code-note" class="meta" style="margin:6px 0 14px">Filled in from the fax for this demo.</p>
+  <div class="box"><h2 id="rv-title" tabindex="-1" style="margin:0 0 4px;font-size:20px">Secure response</h2><p class="meta" style="margin:0 0 12px">Opened by scanning the QR code on the fax. No account or app needed. Confirm who you are.</p>
+  <label class="f" style="max-width:260px">One-time code<input type="text" value="${esc(code)}" readonly aria-describedby="code-note"></label><p id="code-note" class="meta" style="margin:6px 0 14px">Filled in automatically from the QR code.</p>
   <h3>Confirm this is you</h3>
   <div class="kvrow"><span>Name</span><span>${esc(p.name)}</span></div><div class="kvrow"><span>Specialty</span><span>${esc(p.taxonomy||p.spec)}</span></div><div class="kvrow"><span>NPI</span><span>${esc(p.npi||'On file')}</span></div><div class="kvrow"><span>Practice</span><span>${esc(p.real?p.address:p.practice)}</span></div>${p.real?'<div class="kvrow"><span>Source</span><span><span class="tag">NPI Registry</span> real record</span></div>':''}
   <label class="approve" style="margin-top:12px"><input type="checkbox" data-rv="verified" ${v.verified?'checked':''}><span>This is me. I'm the physician named on this fax.</span></label></div>
@@ -323,11 +323,17 @@ function mslCard(drug,question){
   if(!drug) return '';
   return `<div class="box" style="margin-top:16px;border-color:rgba(134,168,255,.35)"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><b>Also want the manufacturer's official answer?</b><span class="tag">Existing Impiricus service</span></div><p class="meta" style="margin:6px 0 10px">Send this to the ${esc(drug)} manufacturer's medical team through Impiricus for official, on-label information. Only your question is shared, never patient identifiers.</p><button class="btn ghost small" data-action="msl" data-d="${esc(drug)}" data-q="${esc(question||'')}">Send to the ${esc(drug)} medical team</button></div>`;
 }
+// QR code for the fax. It encodes the recipient's secure response page (a placeholder address in this prototype).
+function qrSvg(text){
+  if(typeof qrcode==='undefined') return '';
+  const q=qrcode(0,'M'); q.addData(text); q.make();
+  return `<span class="qr" role="img" aria-label="QR code to open the secure response page">${q.createSvgTag({cellSize:3,margin:2})}</span>`;
+}
 function faxPreview(f,p,code){
   const date=new Date().toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'});
   const inApp=p.rel==='connected'||p.rel==='joining';
   if(inApp) return `<div class="box"><b>Delivered as a secure in-app message</b><p class="meta" style="margin:4px 0 0">${esc(p.name)} is in your network, so no fax is needed.</p></div><div class="fax" style="font-family:inherit"><pre>${esc(f.text)}</pre></div>`;
-  return `<div class="fax"><div class="stamp">Simulated</div><div class="fax-head"><span>SECURE FAX: ${TYPE_LABEL[f.type].toUpperCase()}</span><span>Page 1 of ${f.type==='connect'?1:2}</span></div><table><tr><td>To:</td><td>${esc(p.name)}, ${esc(p.practice)}<br>Fax ${esc(p.fax)}</td></tr><tr><td>From:</td><td>${esc(ME.name)}, ${esc(ME.practice)}</td></tr><tr><td>Date:</td><td>${date}</td></tr></table><pre>${esc(f.text)}</pre><div class="respond"><b>To respond (no account needed):</b><br>1. Secure link: impiricus.example/cc/${code}, one-time code ${code}<br>2. Or tick and fax this page back to ${RETURN_FAX}:<br>${f.type==='connect'?`[ ] Yes, join ${esc(ME.short)}'s network on Impiricus<br>[ ] Not now`:`[ ] ${f.type==='referral'?'Accept the referral':f.type==='collab'?'Accept the discussion':'I\u2019ll answer (reply below or by link)'}<br>[ ] Please call me instead: ______________<br>[ ] Decline<br><br>Optional, separate from your answer:<br>[ ] Also join ${esc(ME.short)}'s network on Impiricus (free, verified physicians only)`}</div><p class="fine" style="margin-top:10px">Sent securely through Impiricus Colleague Connect. Joining is free for physicians. Confidential. Intended only for the named recipient. If received in error, notify the sender and destroy this document.</p></div>`;
+  return `<div class="fax"><div class="stamp">Simulated</div><div class="fax-head"><span>SECURE FAX: ${TYPE_LABEL[f.type].toUpperCase()}</span><span>Page 1 of ${f.type==='connect'?1:2}</span></div><table><tr><td>To:</td><td>${esc(p.name)}, ${esc(p.practice)}<br>Fax ${esc(p.fax)}</td></tr><tr><td>From:</td><td>${esc(ME.name)}, ${esc(ME.practice)}</td></tr><tr><td>Date:</td><td>${date}</td></tr></table><pre>${esc(f.text)}</pre><div class="respond"><b>To respond (no account needed):</b><div class="qr-row">${qrSvg('https://impiricus.example/cc/'+code)}<div>1. Scan this QR code with your phone to open your secure response page.<br>Code: ${code}</div></div>2. Or tick and fax this page back to ${RETURN_FAX}:<br>${f.type==='connect'?`[ ] Yes, join ${esc(ME.short)}'s network on Impiricus<br>[ ] Not now`:`[ ] ${f.type==='referral'?'Accept the referral':f.type==='collab'?'Accept the discussion':'I\u2019ll answer (reply below or by link)'}<br>[ ] Please call me instead: ______________<br>[ ] Decline<br><br>Optional, separate from your answer:<br>[ ] Also join ${esc(ME.short)}'s network on Impiricus (free, verified physicians only)`}</div><p class="fine" style="margin-top:10px">Sent securely through Impiricus Colleague Connect. Joining is free for physicians. Confidential. Intended only for the named recipient. If received in error, notify the sender and destroy this document.</p></div>`;
 }
 function stepReview(f){
   const p=doc(f.to), pt=f.patient?pat(f.patient):null, inApp=p.rel==='connected'||p.rel==='joining';
