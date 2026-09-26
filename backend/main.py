@@ -11,11 +11,11 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
 
-from typing import List, Optional  # noqa: E402
+from typing import List, Literal, Optional  # noqa: E402
 
 from fastapi import FastAPI  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
-from pydantic import BaseModel  # noqa: E402
+from pydantic import BaseModel, ConfigDict, Field  # noqa: E402
 
 import ai  # noqa: E402
 from privacy import pattern_check  # noqa: E402
@@ -33,6 +33,7 @@ def health():
 # ---------- Draft ----------
 
 class Person(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     name: str
     specialty: str = ""
     practice: str = ""
@@ -41,43 +42,45 @@ class Person(BaseModel):
 
 
 class DraftRequest(BaseModel):
-    type: str                      # referral | collab | question | connect
-    channel: str = "fax"           # fax | in-app
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["referral", "connect"]
+    purpose: Literal["specialty_evaluation", "telehealth_evaluation", "clinical_trial_eligibility", "connection_invitation"]
+    concern: Optional[Literal[
+        "inflammatory_arthritis", "type_2_diabetes", "atrial_fibrillation",
+        "kidney_disease", "plaque_psoriasis", "chronic_migraine", "crohns_disease", "specialty_concern",
+    ]] = None
+    channel: Literal["fax", "in-app"] = "fax"
     recipient: Person
     recipient_on_impiricus: bool = False
     sender: Person
-    topic: str = ""
-    question: str = ""
-    # ONLY the patient fields the physician checked. Identifiers are never sent here.
-    shared: dict = {}
+    # No free-text topic or patient record is accepted by the AI draft endpoint.
 
 
-DRAFT_SYSTEM = """You write short, professional physician-to-physician correspondence for Colleague Connect, a feature of Impiricus.
-The sending physician reviews and approves every draft before it is sent.
-
-Rules:
-- Write only the body: start with a greeting to the recipient (e.g. "Dr. Sato,") and stop before any sign-off. The app adds the signature and the reply instructions.
-- Under 120 words.
-- Use ONLY the information provided. Never invent or infer symptoms, history, doses, dates, lab values, or findings.
-- Every sentence must do one of three things: greet, restate the provided information or topic, or make the request. Nothing else.
-- Do not describe the patient beyond the listed facts: no symptoms, complaints, severity, course, history, response to treatment, or phrases like "experiencing", "presenting with", or "consistent with".
-- Include every piece of shared patient information given, stated plainly.
-- Never include a patient name, date of birth, record number, address, or phone number. Refer to "a patient" or "the patient".
-- Do not include any numbers other than the ones in the information provided.
-- No clinical advice, no treatment recommendations, no claims about any drug's effectiveness or safety.
-- For a clinical question: include the question exactly as written, in quotation marks, and ask for the colleague's perspective. Never answer or comment on the question yourself.
-- Plain text, no markdown."""
+DRAFT_SYSTEM = """Write concise, warm, collegial physician-to-physician referral or connection correspondence. The sender reviews every draft before sending.
+Start with the recipient greeting on its own line and a blank line. Write only the body, without a sign-off; the app adds the signature and response instructions.
+Under 120 words. For a referral, use only the recipient specialty and the supplied broad concern. Politely ask for an assessment and recommendations for appropriate next steps. For a connection request, invite a professional connection.
+Never include or infer a patient name, initials, ID, age, date, address, medication, lab, symptom, history, or detailed diagnosis. Never add clinical advice or treatment recommendations. Use no facts beyond the structured request. Plain text, no markdown."""
 
 TYPE_ASK = {
     "referral": "a referral asking the recipient to evaluate the patient",
-    "collab": "a request for a short discussion about coordinating care for a shared patient or a treatment the recipient has experience with",
-    "question": "a colleague question asking for the recipient's perspective",
     "connect": "an invitation to connect on Colleague Connect, a secure way for physicians to share referrals and questions",
 }
-FIELD_LABEL = {"agesex": "Age and sex", "dx": "Relevant diagnoses", "meds": "Current medications",
-               "labs": "Recent labs", "support": "Patient support (include this sentence exactly as written)"}
-
-
+PURPOSE_TEXT = {
+    "specialty_evaluation": "specialty evaluation",
+    "telehealth_evaluation": "telehealth evaluation",
+    "clinical_trial_eligibility": "clinical trial eligibility information",
+    "connection_invitation": "a professional connection",
+}
+CONCERN_TEXT = {
+    "inflammatory_arthritis": "inflammatory arthritis",
+    "type_2_diabetes": "type 2 diabetes",
+    "atrial_fibrillation": "atrial fibrillation",
+    "kidney_disease": "kidney disease",
+    "plaque_psoriasis": "plaque psoriasis",
+    "chronic_migraine": "chronic migraine",
+    "crohns_disease": "Crohn's disease",
+    "specialty_concern": "a concern requiring specialty care",
+}
 def _numbers(s):
     return set(re.findall(r"\d+(?:\.\d+)?", s))
 
@@ -106,11 +109,21 @@ def _invented_clinical(body, source):
 
 def _draft_problem(body, source, req):
     """Guardrails. Returns why a draft is unacceptable, or None if it's fine."""
+    if req.type == "referral":
+        if req.recipient.specialty.strip().lower() not in body.lower():
+            return "did not mention the recipient specialty"
+        concern = CONCERN_TEXT.get(req.concern or "")
+        if not concern or concern.lower() not in body.lower():
+            return "did not mention the selected broad concern"
+        if not re.search(r"\b(assess\w*|evaluation|evaluate\w*)\b", body, re.I):
+            return "did not request a specialty assessment"
+        if not re.search(r"\b(recommend\w*|next steps?)\b", body, re.I):
+            return "did not request recommendations for next steps"
+        if "please" not in body.lower():
+            return "did not phrase the request courteously"
     extra = _numbers(body) - _numbers(source)
     if extra:
         return f"added numbers not in the input ({', '.join(sorted(extra))})"
-    if req.type == "question" and req.question.strip() and req.question.strip() not in body:
-        return "did not quote the question exactly"
     invented = _invented_clinical(body, source)
     if invented:
         return f"described the patient beyond the given information ({', '.join(invented)})"
@@ -121,26 +134,33 @@ def _signature(s: Person):
     return f"Thank you,\n{s.name}, {s.specialty}\n{s.practice}, {s.city}\nNPI {s.npi}"
 
 
+def _format_salutation(body):
+    body = body.strip()
+    match = re.match(r"^([^,\r\n]+,)[ \t]*(?:\r?\n[ \t]*)?(.*)$", body, re.S)
+    if match and match.group(2):
+        return f"{match.group(1)}\n\n{match.group(2).lstrip()}"
+    return body
+
+
 @app.post("/ai/draft")
 def draft(req: DraftRequest):
     if req.type not in TYPE_ASK:
         return {"text": None, "reason": "unknown type"}
+    if req.type == "connect" and (req.purpose != "connection_invitation" or req.concern):
+        return {"text": None, "reason": "connection invitations require a connection purpose and no patient concern"}
+    if req.type == "referral" and (req.purpose == "connection_invitation" or not req.concern):
+        return {"text": None, "reason": "referrals require an evaluation purpose and broad concern"}
     if not ai.available():
         return {"text": None, "reason": "no API key"}
-    shared_lines = []
-    for key, label in FIELD_LABEL.items():
-        v = req.shared.get(key)
-        if v:
-            shared_lines.append(f"{label}: {'; '.join(v) if isinstance(v, list) else v}")
     user = (
         f"Write {TYPE_ASK[req.type]}.\n"
         f"Delivery: {'secure fax' if req.channel == 'fax' else 'secure in-app message'}\n"
-        f"From: {req.sender.name}, {req.sender.specialty}, {req.sender.practice}\n"
+        f"Request purpose: {PURPOSE_TEXT[req.purpose]}.\n"
+        + (f"Recipient specialty: {req.recipient.specialty}.\n" if req.type == "referral" else "")
+        + (f"Broad concern: {CONCERN_TEXT[req.concern]}.\n" if req.concern else "")
+        + f"From: {req.sender.name}, {req.sender.specialty}, {req.sender.practice}\n"
         f"To: {req.recipient.name}, {req.recipient.specialty}\n"
-        + (f"Topic: {req.topic}\n" if req.topic and req.type != "question" else "")
-        + (f'Question: "{req.question}"\n' if req.type == "question" else "")
-        + ("Shared patient information (use all of it, nothing else):\n" + "\n".join(shared_lines) if shared_lines
-           else "No patient information is shared.")
+        "No patient identifiers or detailed patient information are provided."
     )
     # The frontend waits about 6s. If a draft fails a guardrail and there's time left, retry once with the reason.
     start, prompt, problem = time.monotonic(), user, None
@@ -160,40 +180,43 @@ def draft(req: DraftRequest):
         return {"text": None, "reason": f"draft {problem}"}
     # Every request goes by fax, so every draft ends with how to reply
     closing = "\n\nTo reply, scan the QR code on this fax. No account needed."
-    return {"text": f"{body.strip()}{closing}\n\n{_signature(req.sender)}", "model": ai.model()}
+    return {"text": f"{_format_salutation(body)}{closing}\n\n{_signature(req.sender)}", "model": ai.model()}
 
 
 # ---------- Privacy check ----------
 
 class Patient(BaseModel):
     """Mock patient record from the prototype (fictional data only)."""
+    model_config = ConfigDict(extra="forbid")
     name: Optional[str] = None
+    initials: Optional[str] = None
     dob: Optional[str] = None
     mrn: Optional[str] = None
     age: Optional[int] = None
     sex: Optional[str] = None
-    dx: List[str] = []
-    meds: List[str] = []
-    labs: List[str] = []
+    dx: List[str] = Field(default_factory=list)
+    meds: List[str] = Field(default_factory=list)
+    labs: List[str] = Field(default_factory=list)
+    general_concern: Optional[Literal[
+        "inflammatory_arthritis", "type_2_diabetes", "atrial_fibrillation",
+        "kidney_disease", "plaque_psoriasis", "chronic_migraine", "crohns_disease", "specialty_concern",
+    ]] = None
 
 
 class PrivacyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     text: str
     patient: Optional[Patient] = None
-    approved: List[str] = []   # ids of the fields the physician checked
+    approved: List[str] = Field(default_factory=list)  # currently only the broad concern can be approved
     topic: str = ""
-    allowed: List[str] = []    # contact details that are fine to include (sender/recipient fax)
+    allowed: List[str] = Field(default_factory=list)  # sender/recipient contact details
 
 
-PRIVACY_SYSTEM = """You review a fax or message that one physician is about to send to another.
-Your only job is to flag text that should not be sent. You never give clinical advice.
-
-Flag text that:
-- identifies the patient (name, date of birth, record number, phone, address, email, employer, or other unique detail), or
-- states a clinical detail (diagnosis, medication, dose, lab, symptom, history) that is NOT in the approved information and NOT in the topic, including vague ones such as "she has been experiencing symptoms" or "her condition has worsened".
-
-Do not flag: the approved information, the topic, the sender's own name/practice/NPI, the recipient's name, generic invitation or sign-off text.
-Each flag's "text" must be copied exactly, character for character, from the draft. Return an empty list if nothing should be flagged."""
+PRIVACY_SYSTEM = """Review a physician-to-physician fax draft. Your only job is to flag text that must not be sent; never give clinical advice.
+Always flag patient names, initials, date of birth, record number, age, contact details, and any unique identifier.
+The only patient clinical information allowed is the selected broad concern supplied as approved. Always flag medications, doses, labs, symptoms, history, detailed diagnoses, or other patient-specific clinical details, even if the draft or topic includes them.
+Do not treat free-text topic as permission to include patient information. Do not flag the physicians' professional names, practice details, signature, or recipient details.
+Each flag's text must be copied exactly from the draft. Return an empty list if no prohibited text appears."""
 
 PRIVACY_SCHEMA = {
     "type": "object",
@@ -212,22 +235,12 @@ PRIVACY_SCHEMA = {
     "additionalProperties": False,
 }
 
-FIELD_NAMES = {"agesex": "age and sex", "dx": "diagnoses", "meds": "medications", "labs": "labs"}
-
-
 def _approved_summary(req):
-    """What the physician approved, in words. Identifiers are never sent to the model."""
+    """Share only the selected broad concern with the privacy-model prompt."""
     p, lines = req.patient, []
-    if p:
-        if "agesex" in req.approved and p.age:
-            lines.append(f"Age and sex: {p.age}, {'female' if p.sex == 'F' else 'male'}")
-        if "dx" in req.approved:
-            lines.append("Diagnoses: " + "; ".join(p.dx))
-        if "meds" in req.approved:
-            lines.append("Medications: " + "; ".join(p.meds))
-        if "labs" in req.approved:
-            lines.append("Labs: " + "; ".join(p.labs))
-    not_approved = [FIELD_NAMES[k] for k in FIELD_NAMES if p and k not in req.approved]
+    if p and "dx" in req.approved and p.general_concern:
+        lines.append("Selected broad concern: " + CONCERN_TEXT[p.general_concern])
+    not_approved = ["all patient identifiers", "age and sex", "detailed diagnoses", "medications", "labs"] if p else []
     return lines, not_approved
 
 
@@ -239,8 +252,8 @@ def privacy_check(req: PrivacyRequest):
     if ai.available():
         lines, not_approved = _approved_summary(req)
         user = (
-            f"Topic (always shared): {req.topic or 'none'}\n"
-            f"Approved patient information:\n" + ("\n".join(lines) or "none") + "\n"
+            f"Topic context (not permission to include patient details): {req.topic or 'none'}\n"
+            f"Approved broad concern:\n" + ("\n".join(lines) or "none") + "\n"
             f"Not approved for sharing: {', '.join(not_approved) or 'nothing'}\n\n"
             f"Draft:\n<<<\n{req.text}\n>>>"
         )

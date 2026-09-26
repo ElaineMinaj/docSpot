@@ -38,17 +38,17 @@ function resetState(){
   };
   S.phys.forEach((p,i)=>{ if(p.real) return; let h=0; for(const ch of p.id) h=(h*31+ch.charCodeAt(0))%100000; if(!p.accessOnly) p.fax=`(555) 01${h%10}-${String(1000+(h*7)%9000)}`; p.npi=String(1245000000+h*1373%99999999); });
   const R = (o)=>{ S.requests.push(Object.assign({attempts:1, events:[]},o)); };
-  R({id:'CC-1031', type:'referral', to:'mensah', patient:'pt3', topic:'Nephrology evaluation for declining kidney function', method:'fax', status:'delivered', created:minsAgo(2900),
+  R({id:'CC-1031', type:'referral', to:'mensah', patient:'pt3', topic:'Nephrology evaluation', method:'fax', status:'delivered', created:minsAgo(2900),
      events:[[minsAgo(2905),'AI drafted referral fax (simulated)'],[minsAgo(2902),'Dr. Lee reviewed and approved recipient and contents'],[minsAgo(2900),'Fax sent to (555) 014-2277'],[minsAgo(2899),'Delivered, 2 pages']]});
   R({id:'CC-1033', type:'connect', to:'novak', topic:'Invitation to connect', method:'fax', status:'delivered', created:minsAgo(1500),
      events:[[minsAgo(1502),'AI drafted invitation (simulated)'],[minsAgo(1501),'Dr. Lee approved'],[minsAgo(1500),'Fax sent to (555) 016-8810'],[minsAgo(1499),'Delivered, 1 page']]});
-  R({id:'CC-1036', type:'referral', to:'whitaker', patient:'pt4', topic:'Dermatology evaluation for moderate to severe psoriasis', method:'fax', status:'failed', created:minsAgo(190), failReason:'Line busy after 3 attempts',
+  R({id:'CC-1036', type:'referral', to:'whitaker', patient:'pt4', topic:'Dermatology evaluation', method:'fax', status:'failed', created:minsAgo(190), failReason:'Line busy after 3 attempts',
      events:[[minsAgo(195),'AI drafted referral fax (simulated)'],[minsAgo(193),'Dr. Lee reviewed and approved'],[minsAgo(190),'Fax send attempted to (555) 012-9043'],[minsAgo(170),'Send failed: line busy after 3 attempts']]});
-  R({id:'CC-1028', type:'referral', to:'okafor', patient:'pt5', topic:'Neurology evaluation for chronic migraine', method:'fax', status:'joining', created:minsAgo(3000),
+  R({id:'CC-1028', type:'referral', to:'okafor', patient:'pt5', topic:'Neurology evaluation', method:'fax', status:'joining', created:minsAgo(3000),
      events:[[minsAgo(3000),'Fax sent and delivered'],[minsAgo(1300),'Dr. Okafor accepted through the secure link'],[minsAgo(1299),'NPI verification started to add Dr. Okafor to your network']]});
-  R({id:'CC-1038', type:'collab', to:'price', patient:'pt3', topic:'Anticoagulation plan with declining kidney function', method:'fax', status:'joining', created:minsAgo(400),
+  R({id:'CC-1038', type:'collab', to:'price', patient:'pt3', topic:'Care coordination', method:'fax', status:'joining', created:minsAgo(400),
      events:[[minsAgo(400),'Fax sent and delivered'],[minsAgo(90),'Dr. Price accepted by fax-back form'],[minsAgo(89),'NPI verification started']]});
-  R({id:'CC-1035', type:'question', to:'sato', topic:'When to add basal insulin on semaglutide', method:'fax', wasConnected:true, status:'responded', created:minsAgo(1700),
+  R({id:'CC-1035', type:'question', to:'sato', topic:'A general question about diabetes management', method:'fax', wasConnected:true, status:'responded', created:minsAgo(1700),
      events:[[minsAgo(1700),'Fax sent and delivered'],[minsAgo(1400),'Dr. Sato answered through the secure response page']]});
   S.activity = [
     [minsAgo(89),'Dr. Theo Price accepted your discussion request and is joining your network','live'],
@@ -138,28 +138,30 @@ function accessOptions(pt,flt){
   }).filter(Boolean).sort((a,b)=>b.score-a.score);
 }
 function accessTopic(pt,mode,trial){
-  const general=(accessLocation(pt.id)||{}).general_condition||pt.summary.toLowerCase();
-  return mode==='trial'?`${pt.needs} evaluation, including eligibility for clinical trial ${trial.id}, for ${general}`
-    :mode==='telehealth'?`${pt.needs} telehealth evaluation for ${general}`:`${pt.needs} evaluation for ${general}`;
+  return mode==='trial'?`${pt.needs} evaluation, including clinical trial eligibility (${trial.id})`
+    :mode==='telehealth'?`${pt.needs} telehealth evaluation`:`${pt.needs} evaluation`;
 }
 
 /* ---------- Information-sharing fields (minimum necessary by default) ---------- */
-function shareFields(type,pt){
+function generalConcern(pt,specialty=pt.needs){
+  const concerns={
+    pt1:['inflammatory_arthritis','inflammatory arthritis'],
+    pt2:['type_2_diabetes','type 2 diabetes'],
+    pt3:specialty==='Cardiology'?['atrial_fibrillation','atrial fibrillation']:['kidney_disease','kidney disease'],
+    pt4:['plaque_psoriasis','plaque psoriasis'],
+    pt5:['chronic_migraine','chronic migraine'],
+    pt6:specialty==='Rheumatology'?['inflammatory_arthritis','inflammatory arthritis']:['crohns_disease',"Crohn's disease"]
+  };
+  return concerns[pt.id]||['specialty_concern','a concern requiring specialty care'];
+}
+function shareFields(type,pt,specialty){
   if(!pt&&(type==='collab'||type==='referral')) return [{id:'reason',label:'Discussion topic',on:true,locked:true}];
   if(type==='connect') return [{id:'intro',label:'Short introduction and invitation',on:true,locked:true}];
-  if(type==='question') return [
-    {id:'question',label:'Your question',on:true,locked:true},
-    ...(pt?[{id:'agesex',label:`Age and sex (${pt.age}, ${pt.sex==='F'?'female':'male'})`,on:true},{id:'dx',label:'Relevant diagnoses',on:true},{id:'meds',label:'Relevant medications',on:false}]:[])
-  ];
-  return [
-    {id:'reason',label:type==='referral'?'Reason for referral':'Discussion topic',on:true,locked:true},
-    {id:'agesex',label:`Age and sex (${pt.age}, ${pt.sex==='F'?'female':'male'})`,on:true},
-    {id:'dx',label:'Relevant diagnoses',on:true},
-    {id:'meds',label:'Relevant medications',on:true},
-    {id:'labs',label:'Relevant recent labs',on:type==='referral'},
-    {id:'ids',label:'Name and date of birth',on:false,locked:true,note:'Released through the secure link only after the physician accepts'},
-    ...supportField(pt)
-  ];
+  const fields=[];
+  if(type==='question') fields.push({id:'question',label:'Your question',on:true,locked:true});
+  if(pt) fields.push({id:'dx',label:`General concern: ${generalConcern(pt,specialty)[1]}`,on:true,locked:true});
+  else if(type!=='question') fields.push({id:'reason',label:'Discussion topic',on:true,locked:true});
+  return fields;
 }
 
 function supportDrug(pt){ return pt?pt.keyDrugs.find(d=>MANUFACTURER_RESOURCES[d]):null; }
@@ -170,20 +172,13 @@ function supportField(pt){
 
 /* ---------- AI fax draft (simulated with templates in this prototype) ---------- */
 function draftText(f){
-  const p=doc(f.to), pt=f.patient?pat(f.patient):null, on=id=>(f.fields.find(x=>x.id===id)||{}).on;
+  const p=doc(f.to), pt=f.patient?pat(f.patient):null;
   const greet=`${shortName(p)},`;
   const sign=`\n\nThank you,\n${ME.name}, ${ME.spec}\n${ME.practice}, ${ME.city}\nNPI ${ME.npi}`;
-  const lines=[];
-  if(pt&&on('agesex')) lines.push(`Patient: ${pt.age}-year-old ${pt.sex==='F'?'female':'male'}`);
-  if(pt&&on('dx')) lines.push(`Relevant diagnoses: ${pt.dx.join('; ')}`);
-  if(pt&&on('meds')) lines.push(`Current medications: ${pt.meds.join('; ')}`);
-  if(pt&&on('labs')) lines.push(`Recent labs: ${pt.labs.join('; ')}`);
-  const sd=supportDrug(pt);
-  if(pt&&sd&&on('support')) lines.push(`Patient support: the ${sd} manufacturer offers ${MANUFACTURER_RESOURCES[sd].program}, available through Impiricus (link included with the secure referral).`);
-  const ctx=lines.length?'\n\n'+lines.join('\n'):'';
-  if(f.type==='referral') return `${greet}\n\nI'd like to refer a patient for ${f.topic.toLowerCase()}.${ctx}\n\nRequest: evaluation and treatment recommendations. Patient identifiers will be shared securely once you accept.${sign}`;
-  if(f.type==='collab') return `${greet}\n\nWe both care for a patient, or you have experience with this treatment, and I'd value a short discussion.\n\nTopic: ${f.topic}${ctx}\n\nA 10-minute call or a few written notes would help. Patient identifiers are shared only after you accept.${sign}`;
-  if(f.type==='question') return `${greet}\n\nA colleague question I thought you'd be well placed to answer:\n\n"${f.question}"${ctx}\n\nA brief reply by scanning the QR code on this fax, or by the fax-back form, is plenty.${sign}`;
+  const concern=pt?generalConcern(pt,p.spec)[1]:'';
+  if(f.type==='referral') return `${greet}\n\nI'd like to refer a patient for ${f.topic.toLowerCase()}${concern?` concerning ${concern}`:''}.\n\nIt would be great if you could please assess this concern and share recommendations for appropriate next steps. Patient identifiers will be shared through the secure response page after acceptance.${sign}`;
+  if(f.type==='collab') return `${greet}\n\nI'd value a brief discussion to coordinate care${concern?` regarding a patient with ${concern}`:''}.\n\nTopic: ${f.topic}. A brief reply by scanning the QR code on this fax, or by the fax-back form, is plenty. Patient identifiers will be shared through the secure response page after acceptance.${sign}`;
+  if(f.type==='question') return `${greet}\n\nA colleague question I thought you'd be well placed to answer:\n\n"${f.question}"${concern?`\n\nGeneral concern: ${concern}.`:''}\n\nA brief reply by scanning the QR code on this fax, or by the fax-back form, is plenty. Patient identifiers will be shared through the secure response page after acceptance.${sign}`;
   return `${greet}\n\nI'd like to connect with you on Colleague Connect, a secure way for physicians to share referrals and questions. It takes about a minute to accept, and there's no cost.${sign}`;
 }
 
@@ -191,38 +186,29 @@ function draftText(f){
 // Only mock patient data from data.js is ever sent.
 function privacyRequest(f){
   const p=doc(f.to), pt=f.patient?pat(f.patient):null;
-  return {text:f.text, approved:f.fields.filter(x=>x.on).map(x=>x.id), topic:f.type==='question'?f.question:f.topic,
-    patient:pt?{name:pt.name,dob:pt.dob,mrn:pt.mrn,age:pt.age,sex:pt.sex,dx:pt.dx,meds:pt.meds,labs:pt.labs}:null,
+  return {text:f.text, approved:f.fields.filter(x=>x.on).map(x=>x.id), topic:pt?generalConcern(pt,p.spec)[1]:(f.type==='connect'?'':f.topic),
+    patient:pt?{name:pt.name,initials:pt.initials,dob:pt.dob,mrn:pt.mrn,age:pt.age,sex:pt.sex,dx:pt.dx,meds:pt.meds,labs:pt.labs,general_concern:generalConcern(pt,p.spec)[0]}:null,
     allowed:[ME.fax,RETURN_FAX,p.fax,p.phone].filter(Boolean)};
 }
-// Approval unlocks once the check has finished and found nothing, or the physician kept the flagged text.
-const privacyClear = f => !!f.privacy&&f.privacy.status==='done'&&(!f.privacy.flags.length||f.privacy.override);
+// Approval is valid only for the exact text that passed a clean privacy check.
+const privacyClear = f => !!f.privacy&&f.privacy.status==='done'&&f.privacy.checkedText===f.text&&!f.privacy.flags.length;
 const FLAG_KIND = {identifier:'patient identifier', contact:'contact detail', unapproved:'unapproved clinical detail', ai:'other detail'};
 function privacyAudit(r,pv){
   if(!pv||pv.status!=='done') return;
   // The audit trail records what kind of item was flagged, not the flagged text itself.
   const kinds=[...new Set(pv.flags.map(x=>FLAG_KIND[x.kind]||'other detail'))];
   addEvent(r,`${PRIVACY_LABEL[pv.mode]}: ${pv.flags.length?`flagged ${pv.flags.length} ${pv.flags.length===1?'item':'items'} (${kinds.join(', ')})`:'no issues found'}`);
-  if(pv.flags.length&&pv.override) addEvent(r,'Dr. Lee reviewed the flagged items and chose to keep them ("This is fine, keep it")');
 }
 
-// What goes to the AI draft endpoint: the checked fields only, never name, DOB, or MRN.
+// The AI draft endpoint receives only structured purpose/specialty/broad-concern metadata.
 function draftRequest(f){
-  const p=doc(f.to), pt=f.patient?pat(f.patient):null, on=id=>(f.fields.find(x=>x.id===id)||{}).on;
-  const shared={};
-  if(pt){
-    if(on('agesex')) shared.agesex=`${pt.age}, ${pt.sex==='F'?'female':'male'}`;
-    if(on('dx')) shared.dx=pt.dx;
-    if(on('meds')) shared.meds=pt.meds;
-    if(on('labs')) shared.labs=pt.labs;
-    const sd=supportDrug(pt);
-    if(sd&&on('support')) shared.support=`The ${sd} manufacturer offers ${MANUFACTURER_RESOURCES[sd].program}, available through Impiricus (link included with the secure referral).`;
-  }
+  const p=doc(f.to), pt=f.patient?pat(f.patient):null;
   const person=x=>({name:x.name, specialty:x.spec, practice:x.practice, city:x.city||'', npi:x.npi||''});
-  return {type:f.type, channel:'fax', recipient:person(p),
-    recipient_on_impiricus:p.rel==='connected'||p.rel==='joining', sender:person(ME), topic:f.topic, question:f.question||'', shared};
+  const purpose=f.type==='connect'?'connection_invitation':f.accessMode==='trial'?'clinical_trial_eligibility':f.accessMode==='telehealth'?'telehealth_evaluation':'specialty_evaluation';
+  return {type:f.type,purpose,concern:pt?generalConcern(pt,p.spec)[0]:null,channel:'fax',recipient:person(p),
+    recipient_on_impiricus:p.rel==='connected'||p.rel==='joining',sender:person(ME)};
 }
-const DRAFT_LABEL = {ai:'AI draft. Review before sending.', template:'AI draft, simulated: template (AI backend off or slow). Review before sending.'};
+const DRAFT_LABEL = {ai:'AI draft. Review before sending.', template:'Privacy-safe template. Review before sending.'};
 
 /* ---------- Request lifecycle ---------- */
 // Existing Impiricus service: route a question to the manufacturer's medical team (MSL / medical information).
@@ -261,10 +247,10 @@ function sendRequest(r,rerender){
 }
 /* ---------- Recipient's side (simulated): fax inbox → secure link → respond → optional join ---------- */
 // The fax as the recipient received it. Older sample requests have no saved text, so rebuild it.
-function recipientFields(r){ return r.fields||shareFields(r.type,r.patient?pat(r.patient):null).filter(x=>x.on).map(x=>x.label); }
+function recipientFields(r){ return r.fields||shareFields(r.type,r.patient?pat(r.patient):null,r.to?doc(r.to)?.spec:undefined).filter(x=>x.on).map(x=>x.label); }
 function recipientFaxText(r){
   if(r.faxText) return r.faxText;
-  return draftText({to:r.to, patient:r.patient, type:r.type, topic:r.topic, question:r.topic, fields:shareFields(r.type,r.patient?pat(r.patient):null)});
+  return draftText({to:r.to, patient:r.patient, type:r.type, topic:r.topic, question:r.topic, fields:shareFields(r.type,r.patient?pat(r.patient):null,doc(r.to)?.spec)});
 }
 function recipientVerified(r){
   const p=doc(r.to);
