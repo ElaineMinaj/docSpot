@@ -4,6 +4,7 @@ Run from the backend/ folder:  uvicorn main:app --reload --port 8000
 The API key lives in backend/.env (never in the browser).
 """
 import re
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -58,6 +59,8 @@ Rules:
 - Write only the body: start with a greeting to the recipient (e.g. "Dr. Sato,") and stop before any sign-off. The app adds the signature and the reply instructions.
 - Under 120 words.
 - Use ONLY the information provided. Never invent or infer symptoms, history, doses, dates, lab values, or findings.
+- Every sentence must do one of three things: greet, restate the provided information or topic, or make the request. Nothing else.
+- Do not describe the patient beyond the listed facts: no symptoms, complaints, severity, course, history, response to treatment, or phrases like "experiencing", "presenting with", or "consistent with".
 - Include every piece of shared patient information given, stated plainly.
 - Never include a patient name, date of birth, record number, address, or phone number. Refer to "a patient" or "the patient".
 - Do not include any numbers other than the ones in the information provided.
@@ -77,6 +80,41 @@ FIELD_LABEL = {"agesex": "Age and sex", "dx": "Relevant diagnoses", "meds": "Cur
 
 def _numbers(s):
     return set(re.findall(r"\d+(?:\.\d+)?", s))
+
+
+# Words that describe a patient's condition. A draft may use one only if the physician's
+# information already contains it; otherwise the AI made it up ("experiencing symptoms consistent with...").
+CLINICAL_WORDS = re.compile(
+    r"\b(symptom\w*|experienc\w*|consistent with|present(?:s|ed|ing)? with|complain\w*|report(?:s|ed|ing)?|"
+    r"worsen\w*|improv\w*|progress\w*|flare\w*|histor\w*|severe|severity|mild|chronic|acute|"
+    r"pain\w*|swell\w*|stiff\w*|fatigue\w*|persistent|uncontrolled|poorly controlled|tolerat\w*|"
+    r"side effects?|adverse|respond\w* (?:to|well|poorly)|onset|likely|suggest\w*|indicat\w*)\b",
+    re.I,
+)
+
+
+def _invented_clinical(body, source):
+    src = source.lower()
+    found = []
+    for m in CLINICAL_WORDS.finditer(body):
+        word = m.group(0).lower()
+        stem = re.sub(r"(s|es|ed|ing|ly)$", "", word.split()[0])[:6]
+        if stem not in src and word not in found:
+            found.append(word)
+    return found
+
+
+def _draft_problem(body, source, req):
+    """Guardrails. Returns why a draft is unacceptable, or None if it's fine."""
+    extra = _numbers(body) - _numbers(source)
+    if extra:
+        return f"added numbers not in the input ({', '.join(sorted(extra))})"
+    if req.type == "question" and req.question.strip() and req.question.strip() not in body:
+        return "did not quote the question exactly"
+    invented = _invented_clinical(body, source)
+    if invented:
+        return f"described the patient beyond the given information ({', '.join(invented)})"
+    return None
 
 
 def _signature(s: Person):
@@ -104,15 +142,22 @@ def draft(req: DraftRequest):
         + ("Shared patient information (use all of it, nothing else):\n" + "\n".join(shared_lines) if shared_lines
            else "No patient information is shared.")
     )
-    body = ai.ask_text(DRAFT_SYSTEM, user, timeout=5.5)
-    if not body:
-        return {"text": None, "reason": "AI unavailable or too slow"}
-    # Guardrails: reject drafts with numbers that weren't in the input, or that drop the question
-    extra = _numbers(body) - _numbers(user)
-    if extra:
-        return {"text": None, "reason": f"draft added details not in the input ({', '.join(sorted(extra))})"}
-    if req.type == "question" and req.question.strip() and req.question.strip() not in body:
-        return {"text": None, "reason": "draft did not quote the question exactly"}
+    # The frontend waits about 6s. If a draft fails a guardrail and there's time left, retry once with the reason.
+    start, prompt, problem = time.monotonic(), user, None
+    for attempt in range(2):
+        left = 5.5 - (time.monotonic() - start)
+        if attempt and left < 2:
+            break
+        body = ai.ask_text(DRAFT_SYSTEM, prompt, timeout=left)
+        if not body:
+            return {"text": None, "reason": "AI unavailable or too slow"}
+        problem = _draft_problem(body, user, req)
+        if not problem:
+            break
+        prompt = (f"{user}\n\nYour previous draft was rejected because it {problem}. "
+                  "Rewrite it using only the facts above, in their own wording.")
+    if problem:
+        return {"text": None, "reason": f"draft {problem}"}
     closing = ""
     if not req.recipient_on_impiricus:
         closing = ("\n\nYou can reply through the secure link on this fax, no account needed. "
@@ -147,7 +192,7 @@ Your only job is to flag text that should not be sent. You never give clinical a
 
 Flag text that:
 - identifies the patient (name, date of birth, record number, phone, address, email, employer, or other unique detail), or
-- states a clinical detail (diagnosis, medication, dose, lab, symptom, history) that is NOT in the approved information and NOT in the topic.
+- states a clinical detail (diagnosis, medication, dose, lab, symptom, history) that is NOT in the approved information and NOT in the topic, including vague ones such as "she has been experiencing symptoms" or "her condition has worsened".
 
 Do not flag: the approved information, the topic, the sender's own name/practice/NPI, the recipient's name, generic invitation or sign-off text.
 Each flag's "text" must be copied exactly, character for character, from the draft. Return an empty list if nothing should be flagged."""

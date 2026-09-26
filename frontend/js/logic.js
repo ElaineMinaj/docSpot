@@ -209,7 +209,7 @@ function createMslRequest(drug,question,patientId){
 function createRequest(f){
   const p=doc(f.to);
   const r={id:'CC-'+(++S.seq), type:f.type, to:f.to, patient:f.patient||null, topic:f.type==='question'?f.question:f.topic,
-    method:p.rel==='connected'||p.rel==='joining'?'in-app':'fax', status:'draft', created:Date.now(), attempts:0, events:[], faxText:f.text, fields:f.fields.filter(x=>x.on).map(x=>x.label)};
+    method:p.rel==='connected'||p.rel==='joining'?'in-app':'fax', status:'draft', created:Date.now(), attempts:0, events:[], faxText:f.text, fields:f.fields.filter(x=>x.on).map(x=>x.label), code:'A7K-'+S.seq};
   const what=r.method==='fax'?'fax':'message';
   addEvent(r,f.draftSource==='ai'?`AI drafted the ${what} (${f.draftModel||'AI model'}) from the checked information only`:`AI drafted the ${what} (simulated: template, AI backend off or slow)`);
   if(f.edited) addEvent(r,'Dr. Lee edited the draft');
@@ -245,8 +245,20 @@ function respond(r,accept,rerender){
   log(`${p.name} accepted and is joining your network`,'live'); rerender();
   setTimeout(()=>{ finishJoin(r); rerender(); },1800);
 }
-// Recipient's response from the secure-link page. Accepting and joining are separate choices.
-function recipientRespond(r,{choice,join,reply},rerender){
+/* ---------- Recipient's side (simulated): fax inbox → secure link → respond → optional join ---------- */
+// The fax as the recipient received it. Older sample requests have no saved text, so rebuild it.
+function recipientFields(r){ return r.fields||shareFields(r.type,r.patient?pat(r.patient):null).filter(x=>x.on).map(x=>x.label); }
+function recipientFaxText(r){
+  if(r.faxText) return r.faxText;
+  return draftText({to:r.to, patient:r.patient, type:r.type, topic:r.topic, question:r.topic, fields:shareFields(r.type,r.patient?pat(r.patient):null)});
+}
+function recipientVerified(r){
+  const p=doc(r.to);
+  addEvent(r,`${p.name} opened the secure link with the one-time code from the fax (simulated)`);
+  addEvent(r,`${p.name} confirmed their identity against their NPI record${p.npi?' (NPI '+p.npi+')':''}`);
+}
+// Accepting and joining are separate choices, made on separate screens.
+function recipientRespond(r,{choice,reply},rerender){
   const p=doc(r.to), label=TYPE_LABEL[r.type].toLowerCase();
   const via='through the secure link (simulated response)';
   if(choice==='decline'){
@@ -257,20 +269,34 @@ function recipientRespond(r,{choice,join,reply},rerender){
     r.status='callback'; p.rel='outside'; p.link='Asked for a phone call instead';
     addEvent(r,`${p.name} asked for a phone call ${via}`); log(`${p.name} asked you to call about your ${label}`,'wait'); rerender(); return;
   }
-  // Accepted (referral, discussion, or answered the question, or accepted the invitation)
+  // Accepted (referral, discussion, answered the question, or accepted the invitation)
+  r.status='accepted'; p.rel='outside'; p.link=`${r.type==='question'?'Answered':'Accepted'} your ${label}`;
   addEvent(r,`${p.name} ${r.type==='question'?'answered':'accepted'} ${via}`);
   if(reply) addEvent(r,`Reply: "${reply}"`);
-  if(r.patient){ const pt=pat(r.patient); if(!pt.careTeam.includes(p.id)) pt.careTeam.push(p.id); addEvent(r,'Patient identifiers released to the accepting physician'); }
-  if(join||r.type==='connect'){
-    r.status='joining'; p.rel='joining'; p.newToImpiricus=true; p.link=`Accepted your ${label} and chose to join your network`;
-    addEvent(r,`${p.name} chose to join your network on Impiricus. NPI verification started`);
-    log(`${p.name} accepted and chose to join your network`,'live'); rerender();
-    setTimeout(()=>{ finishJoin(r); rerender(); },1800);
-  } else {
-    r.status='accepted'; p.rel='outside'; p.link=`${r.type==='question'?'Answered':'Accepted'} your ${label}; didn't join your network`;
-    addEvent(r,`${p.name} chose not to join the network. They can join later from any future request`);
-    log(`${p.name} ${r.type==='question'?'answered':'accepted'} your ${label} without joining the network`,'good'); rerender();
-  }
+  if(r.patient){ const pt=pat(r.patient); if(!pt.careTeam.includes(p.id)) pt.careTeam.push(p.id); addEvent(r,'Patient name and date of birth released to the accepting physician'); }
+  log(`${p.name} ${r.type==='question'?'answered':'accepted'} your ${label}`,'good'); rerender();
+}
+const CONTACT_LABEL = {fax:'fax', inapp:'in-app messages', email:'email'};
+const SERVICE_LABEL = {samples:'samples and bridge supply', msl:'manufacturer medical team', support:'patient support programs'};
+function recipientJoin(r,{prefs,services},rerender){
+  const p=doc(r.to), label=TYPE_LABEL[r.type].toLowerCase();
+  const on=o=>Object.keys(o).filter(k=>o[k]);
+  r.status='joining'; p.rel='joining'; p.newToImpiricus=true; p.link=`Accepted your ${label} and chose to join your network`;
+  addEvent(r,`${p.name} chose to join Impiricus (separate from accepting). NPI verification started`);
+  addEvent(r,`Contact preferences: ${on(prefs).map(k=>CONTACT_LABEL[k]).join(', ')||'none'}. No text messages`);
+  addEvent(r,`Optional Impiricus services: ${on(services).map(k=>SERVICE_LABEL[k]).join(', ')||'none selected'}`);
+  log(`${p.name} accepted and chose to join your network`,'live'); rerender();
+  setTimeout(()=>{ finishJoin(r); rerender(); },1800);
+}
+function recipientSkipJoin(r){
+  const p=doc(r.to);
+  p.link+='; didn’t join your network';
+  addEvent(r,`${p.name} chose not to join the network. They can join later from any future request`);
+}
+function sendConsultNote(r){
+  const p=doc(r.to);
+  addEvent(r,`${p.name} sent a consult note back to Dr. Lee (simulated)`);
+  log(`${p.name} sent a consult note${r.patient?' for '+pat(r.patient).initials:''}`,'good');
 }
 function finishJoin(r){
   const p=doc(r.to);

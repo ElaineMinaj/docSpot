@@ -130,24 +130,87 @@ function viewFlow(){
   return h+'</tbody></table></div></section>';
 }
 
-/* ---------- Recipient's secure-link page (simulated) ---------- */
-function recipientView(r){
-  const p=doc(r.to), pt=r.patient?pat(r.patient):null, t=r.type;
-  const shared=(r.fields||[]).filter(x=>!/Name and date of birth/.test(x));
-  const primary = t==='connect'
-    ? [['accept','Accept the invitation and join']]
-    : [['accept',t==='referral'?'Accept the referral':t==='collab'?'Accept the discussion':'Answer the question'],['call','Ask for a phone call instead'],['decline','Decline']];
-  return `<div class="overlay" data-action="overlay"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="rv-title" style="max-width:640px">
-  <p class="meta" style="margin:0 0 6px">What ${esc(p.name)} sees after opening the secure link from the fax <span class="sim">Simulated</span></p>
-  <div class="box" style="margin:0 0 12px"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>Impiricus Colleague Connect</b><span class="tag">Secure response, code verified</span></div>
-  <h2 id="rv-title" style="margin:10px 0 4px;font-size:20px">${esc(ME.name)} sent you a ${esc(TYPE_LABEL[t].toLowerCase())}</h2><p class="meta" style="margin:0">${esc(ME.spec)}, ${esc(ME.practice)}, ${esc(ME.city)}</p>
+/* ---------- Recipient's side (simulated): what the receiving physician experiences ---------- */
+const RV_STEPS = ['Fax arrives','Secure link','Respond','Join (optional)','Your account'];
+function recipientFlow(){
+  const v=S.rv, r=S.requests.find(x=>x.id===v.id); if(!r) return '';
+  const p=doc(r.to), body=[rvInbox,rvLink,rvRespond,rvJoin,rvAccount][v.step](r,p,v);
+  return `<div class="rv-screen" role="dialog" aria-modal="true" aria-labelledby="rv-title"><div class="rv-inner">
+  <div class="rv-top"><div><p class="meta" style="margin:0">The recipient's side: what ${esc(p.name)} experiences <span class="sim">Simulated</span></p>
+  <div class="stepper">${RV_STEPS.map((n,i)=>`<span class="${i===v.step?'cur':i<v.step?'done':''}"><i>${i<v.step?'✓':i+1}</i>${n}</span>`).join('')}</div></div>
+  <button class="btn ghost small" data-action="close-modal">Back to Dr. Lee's view</button></div>${body}</div></div>`;
+}
+function rvInbox(r,p,v){
+  const code=r.code||'A7K-'+r.id.replace(/\D/g,'');
+  const junk=[['8:02 AM','Reference laboratory','Lab results, 3 patients','Filed to patient charts',''],
+    ['8:40 AM','Health plan','Prior authorization decision','Sent to billing',''],
+    ['9:15 AM','Drug marketing service','Promotional: dinner program invitation','Discarded: marketing','junk'],
+    ['9:31 AM','Medical supply vendor','Special offer on exam supplies','Discarded: marketing','junk']];
+  // Real NPI records often list an address (even a PO box) as the practice name, so name the inbox after the physician.
+  return `<h2 id="rv-title" tabindex="-1">Fax inbox at ${esc(p.real?shortName(p)+'’s practice':p.practice)}</h2>
+  <p class="meta" style="margin:0 0 14px">${p.real?esc(p.address)+'. ':''}Faxes arrive here as PDFs. Front-desk staff sort them before anything reaches ${esc(shortName(p))}.</p>
+  <div class="rv-cols"><div class="tablewrap"><table class="list"><caption class="sr-only">Today's faxes</caption><thead><tr><th scope="col">Received</th><th scope="col">From</th><th scope="col">Subject</th><th scope="col">Staff action</th></tr></thead><tbody>
+  ${junk.map(j=>`<tr class="${j[4]}"><td class="meta">${j[0]}</td><td>${j[1]}</td><td>${j[2]}</td><td class="meta">${j[3]}</td></tr>`).join('')}
+  <tr class="rv-hit"><td class="meta">Just now</td><td><b>${esc(ME.name)}</b><div class="meta">${esc(ME.spec)}, ${esc(ME.practice)}</div></td><td><b>${esc(TYPE_LABEL[r.type])}</b>${r.type==='referral'?': new patient':''}<div class="meta">${esc(r.topic.length>70?r.topic.slice(0,67)+'…':r.topic)}</div></td><td>${v.routed?`<span class="status good">Routed to ${esc(shortName(p))}</span>`:`<button class="btn small" data-action="rv-route">Route to ${esc(shortName(p))}</button>`}</td></tr>
+  </tbody></table></div>
+  <div>${faxPreview({type:r.type,text:recipientFaxText(r)},p,code)}</div></div>
+  <p class="note">Marketing faxes get discarded. A colleague's request about a real patient gets routed to the physician.</p>
+  <div class="rv-foot"><span></span><button class="btn" data-action="rv-next" ${v.routed?'':'disabled'}>${esc(shortName(p))} opens the secure link</button></div>`;
+}
+function rvLink(r,p,v){
+  const code=r.code||'A7K-'+r.id.replace(/\D/g,'');
+  return `<div class="rv-browser"><span class="dotrow"><i></i><i></i><i></i></span><span class="url">https://impiricus.example/cc/${esc(code)}</span></div>
+  <div class="box"><h2 id="rv-title" tabindex="-1" style="margin:0 0 4px;font-size:20px">Secure response</h2><p class="meta" style="margin:0 0 12px">No account needed. Enter the code printed on the fax, then confirm who you are.</p>
+  <label class="f" style="max-width:260px">One-time code<input type="text" value="${esc(code)}" readonly aria-describedby="code-note"></label><p id="code-note" class="meta" style="margin:6px 0 14px">Filled in from the fax for this demo.</p>
+  <h3>Confirm this is you</h3>
+  <div class="kvrow"><span>Name</span><span>${esc(p.name)}</span></div><div class="kvrow"><span>Specialty</span><span>${esc(p.taxonomy||p.spec)}</span></div><div class="kvrow"><span>NPI</span><span>${esc(p.npi||'On file')}</span></div><div class="kvrow"><span>Practice</span><span>${esc(p.real?p.address:p.practice)}</span></div>${p.real?'<div class="kvrow"><span>Source</span><span><span class="tag">NPI Registry</span> real record</span></div>':''}
+  <label class="approve" style="margin-top:12px"><input type="checkbox" data-rv="verified" ${v.verified?'checked':''}><span>This is me. I'm the physician named on this fax.</span></label></div>
+  <div class="rv-foot"><button class="btn ghost" data-action="rv-back">Back</button><button class="btn" data-action="rv-verify" ${v.verified?'':'disabled'}>Continue</button></div>`;
+}
+function rvRespond(r,p,v){
+  const t=r.type, pt=r.patient?pat(r.patient):null;
+  const shared=recipientFields(r).filter(x=>!/Name and date of birth/.test(x));
+  const opts=t==='connect'?[['accept','Accept the invitation'],['decline','Not now']]
+    :[['accept',t==='referral'?'Accept the referral':t==='collab'?'Accept the discussion':'Answer the question'],['call','Ask for a phone call instead'],['decline','Decline']];
+  return `<div class="box"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>Impiricus Colleague Connect</b><span class="tag">Code verified</span></div>
+  <h2 id="rv-title" tabindex="-1" style="margin:10px 0 4px;font-size:20px">${esc(ME.name)} sent you a ${esc(TYPE_LABEL[t].toLowerCase())}</h2><p class="meta" style="margin:0">${esc(ME.spec)}, ${esc(ME.practice)}, ${esc(ME.city)}</p>
   <p style="margin:12px 0 4px"><b>${t==='question'?'Question':t==='connect'?'Message':'Topic'}:</b> ${esc(r.topic)}</p>
-  ${pt?`<p class="meta" style="margin:4px 0 0">Shared so far: ${esc(shared.join(', ')||'topic only')}. Patient name and date of birth are released only if you accept.</p>`:''}</div>
+  ${pt?`<p class="meta" style="margin:4px 0 0">Shared so far: ${esc(shared.join(', ')||'topic only')}.</p><p class="privacy">Patient name and date of birth are released only if you accept.</p>`:''}</div>
   <fieldset style="border:0;padding:0;margin:0"><legend style="font-weight:700;margin-bottom:6px">Your response</legend>
-  ${primary.map((o,i)=>`<label class="check"><input type="radio" name="rv-choice" value="${o[0]}" ${i===0?'checked':''}><span>${o[1]}</span></label>`).join('')}</fieldset>
-  ${t==='question'?'<label class="f" style="margin-top:10px">Your reply<textarea id="rv-reply">In my practice, I would start by checking the most recent labs and adjusting based on current guidance. Happy to discuss by phone.</textarea></label>':''}
-  ${t==='connect'?'':`<div class="approve" style="margin-top:14px"><input type="checkbox" id="rv-join"><span><b>Also join ${esc(ME.short)}'s network on Impiricus</b> (optional)<br><span class="meta">Free and limited to verified physicians. Lets colleagues send you referrals and questions securely instead of by fax. Your answer above is sent either way. This does not sign you up for text messages.</span></span></div>`}
-  <div class="modal-foot"><button class="btn ghost" data-action="close-modal">Cancel</button><button class="btn" data-action="rv-send" data-id="${r.id}">Send response</button></div></div></div>`;
+  ${opts.map(o=>`<label class="check"><input type="radio" name="rv-choice" data-rv="choice" value="${o[0]}" ${v.choice===o[0]?'checked':''}><span>${o[1]}</span></label>`).join('')}</fieldset>
+  ${t==='question'?`<label class="f" style="margin-top:10px">Your reply to ${esc(ME.short)}<textarea data-rv="reply">${esc(v.reply)}</textarea></label>`:''}
+  <p class="note">Joining Impiricus is a separate choice on the next screen. Your response is sent either way.</p>
+  <div class="rv-foot"><button class="btn ghost" data-action="rv-back">Back</button><button class="btn" data-action="rv-respond">Send response</button></div>`;
+}
+function rvJoin(r,p,v){
+  if(v.choice!=='accept') return `<div class="box"><h2 id="rv-title" tabindex="-1" style="margin:0 0 6px;font-size:20px">Response sent</h2><p style="margin:0">${esc(ME.short)} will see that you ${v.choice==='call'?'asked for a phone call':'declined'}. Nothing else is shared, and you haven't been signed up for anything.</p></div><div class="rv-foot"><span></span><button class="btn" data-action="close-modal">Back to Dr. Lee's view</button></div>`;
+  const pt=r.patient?pat(r.patient):null;
+  let h=`<div class="box ok-box"><h2 id="rv-title" tabindex="-1" style="margin:0 0 6px;font-size:20px">${r.type==='question'?'Answer sent':'Accepted'}. ${esc(ME.short)} has been notified.</h2>
+  ${pt?`<div class="reveal"><span class="tag">Released after you accepted</span><div class="kvrow"><span>Patient</span><span><b>${esc(pt.name)}</b></span></div><div class="kvrow"><span>Date of birth</span><span>${esc(pt.dob)}</span></div><div class="kvrow"><span>Already shared</span><span>${esc(recipientFields(r).filter(x=>!/Name and date of birth/.test(x)).join(', '))}</span></div></div>`:''}</div>`;
+  h+=`<div class="box"><h3 style="font-size:16px">One more, separate choice: join Impiricus?</h3><p class="meta" style="margin:0 0 10px">Free and limited to verified physicians. Colleagues like ${esc(ME.short)} can reach you securely, and you keep receiving faxes if you prefer. Your response above is already sent either way.</p>`;
+  if(!v.joinYes) return h+`<div class="btnrow" style="margin-top:0"><button class="btn" data-action="rv-joinyes">Join Impiricus (free)</button><button class="btn ghost" data-action="rv-joinno">Not now</button></div></div>`;
+  const box=(grp,k,label,sub)=>`<label class="check"><input type="checkbox" data-rv="${grp}" value="${k}" ${v[grp][k]?'checked':''}><span>${label}${sub?`<small>${sub}</small>`:''}</span></label>`;
+  return h+`<h3>How colleagues can reach you</h3>${box('prefs','fax','Fax','What you use today. Stays on unless you turn it off.')}${box('prefs','inapp','Secure in-app messages','')}${box('prefs','email','Email','')}
+  <p class="privacy">Colleague Connect never uses text messages (SMS).</p>
+  <h3 style="margin-top:14px">Optional Impiricus services</h3><p class="meta" style="margin:0 0 4px">Nothing is turned on unless you choose it. Change these anytime.</p>
+  ${box('services','samples','Samples and bridge supply for your patients','Through Impiricus partners')}${box('services','msl','Manufacturer medical team for drug questions','Official, on-label answers')}${box('services','support','Patient support programs','Copay help and prior authorization support')}
+  <div class="btnrow"><button class="btn" data-action="rv-join">Verify my NPI and join</button><button class="btn ghost" data-action="rv-joinno">Not now</button></div></div>`;
+}
+function rvAccount(r,p,v){
+  if(v.skipped) return `<div class="box"><h2 id="rv-title" tabindex="-1" style="margin:0 0 6px;font-size:20px">All set</h2><p style="margin:0">Your response went to ${esc(ME.short)}. You didn't join Impiricus, and nothing else changes: future requests will still reach you by fax, and you can join from any of them.</p></div><div class="rv-foot"><span></span><button class="btn" data-action="close-modal">Back to Dr. Lee's view</button></div>`;
+  if(r.status==='joining') return `<div class="box"><h2 id="rv-title" tabindex="-1" style="margin:0 0 6px;font-size:20px">Verifying your NPI…</h2><p class="meta" style="margin:0">Checking ${esc(p.npi||'your NPI')} against the NPI Registry. <span class="sim">Simulated</span></p></div>`;
+  const pt=r.patient?pat(r.patient):null, on=o=>Object.keys(o).filter(k=>o[k]);
+  const consult=r.events.some(e=>/consult note/.test(e[1]));
+  return `<div class="rv-home-head"><div style="display:flex;gap:12px;align-items:center">${avatar(p)}<div><h2 id="rv-title" tabindex="-1" style="margin:0;font-size:22px">Welcome to Impiricus, ${esc(p.name)}</h2><div class="meta">${esc(p.spec)}, ${esc(p.real?p.address:p.practice)}</div></div></div><span class="verified">NPI verified</span></div>
+  <div class="rv-cols"><div>
+  <div class="box"><h3>Your network</h3><div class="person" style="padding:8px 0;border:0"><div class="avatar g">AL</div><div class="body"><b>${esc(ME.name)}</b><div class="meta">${esc(ME.spec)}, ${esc(ME.practice)}. Connected through this ${esc(TYPE_LABEL[r.type].toLowerCase())}</div></div></div></div>
+  <div class="box"><h3>Your requests</h3><div class="kvrow"><span>${esc(TYPE_LABEL[r.type])} from ${esc(ME.short)}</span><span class="status good">${r.type==='question'?'Answered':'Accepted'}</span></div>${pt?`<p style="margin:8px 0 4px"><b>${esc(pt.name)}</b>, ${pt.age}${pt.sex}. ${esc(r.topic)}</p>`:`<p style="margin:8px 0 4px">${esc(r.topic)}</p>`}
+  ${r.type==='referral'?(consult?'<p class="meta" style="margin:8px 0 0">Consult note sent back to Dr. Lee. The loop is closed.</p>':`<button class="btn small" data-action="rv-consult" style="margin-top:8px">Send consult note back</button> <span class="sim">Simulated</span>`):''}</div>
+  </div><div>
+  <div class="box"><h3>How colleagues reach you</h3><p style="margin:0">${on(v.prefs).map(k=>CONTACT_LABEL[k][0].toUpperCase()+CONTACT_LABEL[k].slice(1)).join(', ')||'No channels selected'}</p><p class="meta" style="margin:4px 0 0">Never by text message.</p></div>
+  <div class="box"><h3>Impiricus services</h3><p style="margin:0">${on(v.services).map(k=>SERVICE_LABEL[k][0].toUpperCase()+SERVICE_LABEL[k].slice(1)).join(', ')||'None turned on. You can add them anytime.'}</p></div>
+  </div></div>
+  <div class="rv-foot"><span></span><button class="btn" data-action="close-modal">Back to Dr. Lee's view</button></div>`;
 }
 
 /* ---------- Action sheet ---------- */

@@ -44,6 +44,7 @@ def _openai(system, user, timeout, schema):
         resp = _clients["openai"].with_options(timeout=timeout).chat.completions.create(
             model=model(),
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            temperature=0,  # stick closely to the given facts
             **kwargs,
         )
     except openai.APITimeoutError:

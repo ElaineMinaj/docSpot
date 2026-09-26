@@ -13,7 +13,10 @@ function render(){
   const body=root.querySelector('.sheet-body'), top=body?body.scrollTop:0;
   root.innerHTML=viewSheet();
   const nb=root.querySelector('.sheet-body'); if(nb&&S.flow&&S.flow._keepScroll) nb.scrollTop=top;
-  document.body.style.overflow=S.flow?'hidden':'';
+  const mr=document.getElementById('modal-root'), rvTop=mr.querySelector('.rv-screen')?mr.querySelector('.rv-screen').scrollTop:0;
+  mr.innerHTML=S.rv?recipientFlow():'';
+  if(S.rv){ const sc=mr.querySelector('.rv-screen'); if(S.rv._focus){ S.rv._focus=false; const h=document.getElementById('rv-title'); if(h) h.focus(); } else if(sc) sc.scrollTop=rvTop; }
+  document.body.style.overflow=S.flow||S.rv?'hidden':'';
 }
 
 /* ---------- Privacy check: runs whenever the draft or the checked fields change ---------- */
@@ -75,7 +78,7 @@ document.addEventListener('click',e=>{
   const a=t.dataset.action, id=t.dataset.id, f=S.flow;
   if(f) f._keepScroll=false;
   switch(a){
-    case 'reset': resetState(); render(); toast('Demo reset.'); break;
+    case 'reset': resetState(); S.rv=null; render(); toast('Demo reset.'); break;
     case 'select': S.mapSel=id; render(); break;
     case 'mapview': S.mapView=t.dataset.v; render(); break;
     case 'specfilter': S.specFilter=S.specFilter===t.dataset.s?null:t.dataset.s; render(); break;
@@ -109,15 +112,23 @@ document.addEventListener('click',e=>{
       const r=createMslRequest(t.dataset.d,t.dataset.q||'',null);
       toast(`Sent to the ${t.dataset.d} medical team through Impiricus (simulated). Track it under What happens next.`);
       render(); break; }
-    case 'recipient': document.getElementById('modal-root').innerHTML=recipientView(findReq(id)); { const b=document.querySelector('.modal input'); if(b) b.focus(); } break;
-    case 'close-modal': document.getElementById('modal-root').innerHTML=''; break;
-    case 'overlay': if(e.target===t) document.getElementById('modal-root').innerHTML=''; break;
-    case 'rv-send': {
-      const choice=(document.querySelector('input[name="rv-choice"]:checked')||{}).value||'accept';
-      const joinEl=document.getElementById('rv-join'), replyEl=document.getElementById('rv-reply');
-      document.getElementById('modal-root').innerHTML='';
-      recipientRespond(findReq(id),{choice,join:joinEl?joinEl.checked:false,reply:replyEl?replyEl.value.trim():''},render);
+    // Recipient's side walkthrough (state in S.rv)
+    case 'recipient': S.rv={id, step:0, routed:false, verified:false, choice:'accept', reply:'Happy to help. Call my office any time this week to discuss.',
+      joinYes:false, skipped:false, prefs:{fax:true,inapp:false,email:false}, services:{samples:false,msl:false,support:false}, _focus:true}; render(); break;
+    case 'close-modal': S.rv=null; render(); break;
+    case 'rv-route': S.rv.routed=true; render(); break;
+    case 'rv-next': S.rv.step++; S.rv._focus=true; render(); break;
+    case 'rv-back': S.rv.step--; S.rv._focus=true; render(); break;
+    case 'rv-verify': if(!S.rv.verified) return; recipientVerified(findReq(S.rv.id)); S.rv.step=2; S.rv._focus=true; render(); break;
+    case 'rv-respond': {
+      const v=S.rv, r=findReq(v.id);
+      v.step=3; v._focus=true;
+      recipientRespond(r,{choice:v.choice,reply:r.type==='question'?v.reply.trim():''},render);
       break; }
+    case 'rv-joinyes': S.rv.joinYes=true; render(); break;
+    case 'rv-joinno': { const v=S.rv; recipientSkipJoin(findReq(v.id)); v.skipped=true; v.step=4; v._focus=true; render(); break; }
+    case 'rv-join': { const v=S.rv; v.step=4; v._focus=true; recipientJoin(findReq(v.id),{prefs:v.prefs,services:v.services},render); break; }
+    case 'rv-consult': sendConsultNote(findReq(S.rv.id)); render(); toast('Consult note sent to Dr. Lee (simulated).'); break;
     case 'retry': { const r=findReq(id); addEvent(r,'Dr. Lee chose to retry the send'); sendRequest(r,render); break; }
     case 'editfax': S.editing=id; S.expanded=id; render(); break;
     case 'respond': respond(findReq(id),t.dataset.a==='1',render); break;
@@ -130,6 +141,13 @@ document.addEventListener('click',e=>{
 document.addEventListener('change',e=>{
   const el=e.target, f=S.flow;
   if(el.dataset.bind==='outside'){ S.showOutside=el.checked; render(); return; }
+  if(el.dataset.rv&&S.rv){
+    const v=S.rv, k=el.dataset.rv;
+    if(k==='verified') v.verified=el.checked;
+    else if(k==='choice') v.choice=el.value;
+    else if(k==='prefs'||k==='services') v[k][el.value]=el.checked;
+    render(); return;
+  }
   if(!f) return;
   if(el.dataset.bind==='approve'){ f.approved=el.checked&&privacyClear(f); f._keepScroll=true; render(); return; }
   if(el.dataset.field){
@@ -139,7 +157,9 @@ document.addEventListener('change',e=>{
   }
 });
 document.addEventListener('input',e=>{
-  const el=e.target, f=S.flow; if(!f) return;
+  const el=e.target, f=S.flow;
+  if(el.dataset.rv==='reply'&&S.rv){ S.rv.reply=el.value; return; }
+  if(!f) return;
   if(el.dataset.bind==='text'){ f.text=el.value; f.edited=true; runPrivacyCheck(700); }
   if(el.dataset.bind==='topic'){ f.topic=el.value; runPrivacyCheck(700); }
   if(el.id==='q-text') f.question=el.value;
@@ -153,7 +173,7 @@ document.addEventListener('submit',e=>{
   sendRequest(r,render);
 });
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'&&document.querySelector('#modal-root .overlay')){ document.getElementById('modal-root').innerHTML=''; return; }
+  if(e.key==='Escape'&&S.rv){ S.rv=null; render(); return; }
   if(e.key==='Escape'&&S.flow){ S.flow=null; render(); }
   if((e.key==='Enter'||e.key===' ')&&e.target.matches('g[role="button"][data-action]')){ e.preventDefault(); e.target.dispatchEvent(new MouseEvent('click',{bubbles:true})); }
 });

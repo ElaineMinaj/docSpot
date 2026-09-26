@@ -338,6 +338,30 @@ tr.expand td{background:var(--bg-2)}
 .pflags mark{align-self:flex-start;background:rgba(240,125,102,.18);color:var(--ink);border-radius:4px;padding:0 5px;font-weight:600}
 .pflags span{font-size:13px;color:var(--muted)}
 .approve:has(input:disabled){opacity:.6}
+
+/* Recipient's side walkthrough */
+.rv-screen{position:fixed;inset:0;z-index:55;background:var(--bg);overflow:auto;padding:calc(18px + env(safe-area-inset-top,0px)) 24px calc(40px + env(safe-area-inset-bottom,0px))}
+.rv-inner{max-width:1100px;margin:0 auto}
+.rv-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.rv-screen h2:focus{outline:none}
+.rv-screen > .rv-inner > h2{margin:0 0 4px;font-size:22px;letter-spacing:-.015em}
+.rv-screen .box h3{font-size:14.5px}
+.rv-cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;align-items:start}
+.rv-foot{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:18px}
+tr.junk td{opacity:.5}
+tr.rv-hit td{background:var(--accent-soft)}
+table.list tr.rv-hit:hover td{background:var(--accent-soft)}
+.rv-browser{display:flex;align-items:center;gap:12px;background:var(--surface-2);border:1px solid var(--line);border-bottom:0;border-radius:12px 12px 0 0;padding:8px 12px;font-size:13px;color:var(--muted)}
+.rv-browser + .box{border-radius:0 0 14px 14px}
+.rv-browser .url{background:var(--bg-2);border-radius:999px;padding:3px 12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dotrow{display:flex;gap:5px}
+.dotrow i{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.ok-box{border-color:rgba(60,203,154,.35)}
+.reveal{background:var(--bg-2);border:1px solid rgba(60,203,154,.35);border-radius:10px;padding:10px 12px;margin-top:10px}
+.reveal .tag{display:inline-block;margin-bottom:6px;color:var(--connected);border-color:rgba(60,203,154,.35)}
+.rv-home-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+@media (max-width:900px){.rv-cols{grid-template-columns:1fr}}
+@media (max-width:640px){.rv-screen{padding-left:14px;padding-right:14px}}
 @media (max-width:1100px){
   .summary,.netwrap,.review{grid-template-columns:1fr}
   .panel-card{position:static}
