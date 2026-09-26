@@ -1,8 +1,8 @@
-"""Pattern-based privacy check for fax and message drafts.
+"""Pattern-based privacy check for fax drafts.
 
-Runs with no API key. Flags patient identifiers (name, date of birth, MRN),
-contact details (phone, fax, email, street address), and clinical details from
-fields the physician did NOT check. The frontend has a matching copy in
+Runs with no API key. Flags patient identifiers (name, initials, date of birth,
+MRN), contact details (phone, fax, email, street address), demographics, and
+clinical details beyond the selected general concern. The frontend has a matching copy in
 frontend/js/api.js for when this server is off; keep the two in step.
 """
 import re
@@ -17,24 +17,33 @@ ADDRESS = re.compile(
     r"\b\d{1,6}[ \t]+(?:[A-Za-z0-9.]+[ \t]+){0,4}"
     r"(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Drive|Ln|Lane|Way|Ct|Court|Pkwy|Parkway|Hwy|Highway|Pl|Place)\b\.?"
 )
+BROAD_CONCERNS = {
+    "inflammatory_arthritis": "inflammatory arthritis",
+    "type_2_diabetes": "type 2 diabetes",
+    "atrial_fibrillation": "atrial fibrillation",
+    "kidney_disease": "kidney disease",
+    "plaque_psoriasis": "plaque psoriasis",
+    "chronic_migraine": "chronic migraine",
+    "crohns_disease": "crohn's disease",
+    "specialty_concern": "a concern requiring specialty care",
+}
 
 
 def _norm(s):
-    return re.sub(r"\s+", " ", str(s or "")).strip().lower()
+    return re.sub(r"\s+", " ", str(s or "")).strip().lower().replace("’", "'").replace("‘", "'")
 
 
 def pattern_check(text, patient=None, approved=None, topic="", allowed=None):
     """Return a list of {text, reason, kind} flags found in `text`.
 
-    patient:  mock patient record (name, dob, mrn, age, sex, dx, meds, labs), or None
-    approved: ids of the fields the physician checked (agesex, dx, meds, labs, ...)
-    topic:    the reason for referral or discussion topic (always shared, so never flagged)
+    patient:  local patient record used only for the pattern comparison, or None
+    approved: currently only the selected broad concern (dx) can be approved
+    topic:    context only; it never makes patient details exempt from checking
     allowed:  strings that are fine to include (the sender's and recipient's fax numbers, etc.)
     """
     approved = set(approved or [])
     allowed_norm = {_norm(a) for a in (allowed or []) if a}
     allowed_digits = {re.sub(r"\D", "", a) for a in (allowed or []) if a}
-    low_topic = _norm(topic)
     flags, seen = [], set()
 
     def add(snippet, reason, kind):
@@ -52,6 +61,9 @@ def pattern_check(text, patient=None, approved=None, topic="", allowed=None):
 
     # 1. Patient identifiers (never allowed in a draft; released only after acceptance)
     if patient:
+        initials = patient.get("initials") or ""
+        if initials and find_phrase(initials):
+            add(find_phrase(initials), "Patient initials are not permitted in this fax.", "identifier")
         name = patient.get("name") or ""
         for part in [name] + name.split():
             if len(part) < 3:
@@ -86,34 +98,37 @@ def pattern_check(text, patient=None, approved=None, topic="", allowed=None):
     for m in ADDRESS.finditer(text):
         add(m.group(0).strip(), "Street address. It could identify the patient.", "contact")
 
-    # 3. Clinical details from fields the physician left unchecked
+    # Only the selected broad concern may appear. Demographics, medications, labs,
+    # and any more detailed diagnosis are never faxed, even if a client marks them approved.
     if patient:
-        if "agesex" not in approved:
-            age = patient.get("age")
-            m = re.search(rf"\b{age}[- ]?(?:year|yo\b|y/o)", text, re.I) if age else None
-            if m:
-                add(m.group(0), "Age wasn't checked for sharing.", "unapproved")
-        checks = [
-            ("dx", patient.get("dx") or [], "Diagnosis wasn't checked for sharing."),
-            ("meds", patient.get("meds") or [], "Medications weren't checked for sharing."),
-            ("labs", patient.get("labs") or [], "Labs weren't checked for sharing."),
-        ]
-        for field, items, reason in checks:
-            if field in approved:
-                continue
+        age = patient.get("age")
+        m = re.search(rf"\b{age}[- ]?(?:year|yo\b|y/o)", text, re.I) if age else None
+        if m:
+            add(m.group(0), "Patient age is not permitted in this fax.", "unapproved")
+        sex_label = {"F": "female", "M": "male"}.get(patient.get("sex"))
+        if sex_label and find_phrase(sex_label):
+            add(find_phrase(sex_label), "Patient sex is not permitted in this fax.", "unapproved")
+        for items, reason in [
+            (patient.get("meds") or [], "Medication information is not permitted in this fax."),
+            (patient.get("labs") or [], "Lab results are not permitted in this fax."),
+        ]:
             for item in items:
-                # The full item, and for meds and labs the leading name (e.g. "Prednisone", "CRP")
-                candidates = [item]
-                if field in ("meds", "labs"):
-                    lead = re.split(r"\s(?=\d)|,", item)[0].strip()
-                    candidates.append(lead)
-                for c in candidates:
-                    if _norm(c) in low_topic:
-                        continue  # the topic is always shared, so it's fine
-                    hit = find_phrase(c)
+                candidates = [item, re.split(r"\s(?=\d)|,", item)[0].strip()]
+                for candidate in candidates:
+                    hit = find_phrase(candidate)
                     if hit:
                         add(hit, reason, "unapproved")
                         break
+        allowed_concern = _norm(BROAD_CONCERNS.get(patient.get("general_concern"), ""))
+        for item in patient.get("dx") or []:
+            general = re.split(r"[,;]|\b(?:suspected|about|new|with)\b", item, maxsplit=1, flags=re.I)[0].strip()
+            full_hit, general_hit = find_phrase(item), find_phrase(general)
+            if full_hit and _norm(item) != _norm(general):
+                add(full_hit, "Detailed diagnosis information is not permitted; share only the selected general concern.", "unapproved")
+            if general_hit and _norm(general) != allowed_concern:
+                add(general_hit, "Only the selected general concern may be shared.", "unapproved")
+            if general_hit and "dx" not in approved:
+                add(general_hit, "The general concern was not approved for sharing.", "unapproved")
     # Drop a flag when a longer flag already covers it ("Reyes" inside "Maria Reyes")
     return [f for f in flags if not any(
         g is not f and len(g["text"]) > len(f["text"]) and f["text"].lower() in g["text"].lower() for g in flags)]

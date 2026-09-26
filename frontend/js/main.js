@@ -25,12 +25,12 @@ function runPrivacyCheck(delay){
   const f=S.flow; if(!f||!f.to) return;
   clearTimeout(privacyTimer);
   const seq=++privacySeq;
-  f.privacy={status:'checking',flags:[],mode:null,override:false}; f.approved=false;
+  f.privacy={status:'checking',flags:[],mode:null}; f.approved=false;
   updatePrivacyUI();
   privacyTimer=setTimeout(async()=>{
     const text=f.text, res=await privacyCheck(privacyRequest(f));
     if(seq!==privacySeq||S.flow!==f||f.text!==text) return;   // a newer check or edit replaced this one
-    f.privacy={status:'done',flags:res.flags,mode:res.mode,override:false};
+    f.privacy={status:'done',flags:res.flags,mode:res.mode,checkedText:text};
     updatePrivacyUI();
   },delay||0);
 }
@@ -48,8 +48,8 @@ async function generateDraft(){
   const f=S.flow; if(!f||!f.to) return;
   const seq=++draftSeq;
   clearTimeout(privacyTimer); privacySeq++;          // cancel any check of the old draft
-  f.drafting=true; f.approved=false; f.privacy={status:'checking',flags:[],mode:null,override:false};
-  const res=await aiDraft(draftRequest(f));
+  f.drafting=true; f.approved=false; f.privacy={status:'checking',flags:[],mode:null};
+  const res=f.type==='referral'||(f.type==='connect'&&!f.patient)?await aiDraft(draftRequest(f)):null;
   if(seq!==draftSeq||S.flow!==f) return;              // a newer draft request replaced this one
   if(res){ f.text=res.text; f.draftSource='ai'; f.draftModel=res.model; }
   else { f.text=draftText(f); f.draftSource='template'; f.draftModel=null; }
@@ -57,11 +57,10 @@ async function generateDraft(){
   render(); runPrivacyCheck(0);
 }
 
-const COLLAB_TOPICS = {pt2:'Next step after semaglutide with A1c still above goal', pt3:'Anticoagulation plan with declining kidney function', pt6:'Evaluating new joint pain during infliximab treatment'};
 function stepIndex(name){ return STEP_NAMES[S.flow.type](S.flow.fixedTo,S.flow).indexOf(name); }
 function prepareReview(){
   const f=S.flow, pt=f.patient?pat(f.patient):null;
-  f.fields=shareFields(f.type,pt); f.text=''; f.edited=false; f.approved=false; f.showPreview=false;
+  f.fields=shareFields(f.type,pt,doc(f.to)?.spec); f.text=''; f.edited=false; f.approved=false; f.showPreview=false;
   f.step=stepIndex('Review and approve');
   generateDraft();
 }
@@ -90,7 +89,7 @@ document.addEventListener('click',e=>{
     case 'pick-patient': {
       const pt=pat(id); f.patient=id;
       const spec=f.fixedTo?doc(f.fixedTo).spec:pt.needs;
-      f.topic=f.type==='referral'?`${spec} evaluation for ${pt.summary.toLowerCase()}`:(COLLAB_TOPICS[id]||`Coordinating care for ${pt.summary.toLowerCase()}`);
+      f.topic=f.type==='referral'?`${spec} evaluation`:f.type==='collab'?'Care coordination for a patient':'';
       if(f.fixedTo){ f.to=f.fixedTo; prepareReview(); } else f.step++;
       render(); break; }
     case 'pick-doc': f.to=id; prepareReview(); render(); break;
@@ -107,10 +106,9 @@ document.addEventListener('click',e=>{
       if(f.fixedTo){ f.to=f.fixedTo; prepareReview(); } else f.step++;
       render(); break; }
     case 'regen': generateDraft(); f._keepScroll=true; render(); break;
-    case 'privacy-ok': if(f&&f.privacy){ f.privacy.override=true; updatePrivacyUI(); } break;
     case 'preview': f.showPreview=!f.showPreview; f._keepScroll=true; render(); break;
     case 'send': {
-      if(!f.approved) return;
+      if(!f.approved||!privacyClear(f)){ toast('Sending is blocked until this exact draft passes the privacy check with no flags.'); runPrivacyCheck(0); return; }
       const r=createRequest(f); f.reqId=r.id; f.step=stepIndex('Track');
       S.mapSel=r.to; sendRequest(r,render); break; }
     case 'msl': {

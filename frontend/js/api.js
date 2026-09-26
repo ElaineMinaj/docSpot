@@ -32,9 +32,15 @@ async function aiDraft(req){
 /* ---------- Privacy check ---------- */
 // mode: 'ai' (pattern rules + Claude) | 'patterns' (backend, no key) | 'offline' (rules in this file)
 const PRIVACY_LABEL = {
-  ai:'AI privacy check',
-  patterns:'AI privacy check, simulated: pattern rules only (no API key)',
-  offline:'AI privacy check, simulated: pattern rules in the browser (backend off)'
+  ai:'AI-assisted privacy check',
+  patterns:'Local privacy rules',
+  offline:'Local privacy rules (backend unavailable)'
+};
+const BROAD_CONCERN_LABELS = {
+  inflammatory_arthritis:'inflammatory arthritis', type_2_diabetes:'type 2 diabetes',
+  atrial_fibrillation:'atrial fibrillation', kidney_disease:'kidney disease',
+  plaque_psoriasis:'plaque psoriasis', chronic_migraine:'chronic migraine',
+  crohns_disease:"crohn's disease", specialty_concern:'a concern requiring specialty care'
 };
 async function privacyCheck(req){
   if(AI.status!=='off'){
@@ -47,9 +53,9 @@ async function privacyCheck(req){
 // Browser copy of backend/privacy.py. Keep the two in step.
 function localPatternCheck({text,patient,approved,topic,allowed}){
   approved=new Set(approved||[]);
-  const norm=s=>String(s||'').replace(/\s+/g,' ').trim().toLowerCase();
+  const norm=s=>String(s||'').replace(/\s+/g,' ').trim().toLowerCase().replace(/[’‘]/g,"'");
   const rx=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-  const lowTopic=norm(topic), allowedDigits=(allowed||[]).map(a=>String(a).replace(/\D/g,'').slice(-10));
+  const allowedDigits=(allowed||[]).map(a=>String(a).replace(/\D/g,'').slice(-10));
   const flags=[], seen=new Set();
   const add=(snippet,reason,kind)=>{ const k=norm(snippet)+'|'+kind; if(snippet&&!seen.has(k)){ seen.add(k); flags.push({text:snippet,reason,kind}); } };
   const findPhrase=p=>{ if(!p||p.trim().length<2) return null; const m=text.match(new RegExp('(?<!\\w)'+rx(p.trim())+'(?!\\w)','i')); return m?m[0]:null; };
@@ -57,6 +63,7 @@ function localPatternCheck({text,patient,approved,topic,allowed}){
 
   // 1. Patient identifiers
   if(patient){
+    if(patient.initials){const hit=findPhrase(patient.initials);if(hit)add(hit,'Patient initials are not permitted in the fax.','identifier');}
     const name=patient.name||'';
     [name,...name.split(/\s+/)].forEach(part=>{
       if(part.length<3) return;
@@ -77,15 +84,21 @@ function localPatternCheck({text,patient,approved,topic,allowed}){
   each(/\b[\w.+-]+@[\w-]+\.[\w.]+\b/g, s=>{ if(!(allowed||[]).map(norm).includes(norm(s))) add(s,'Email address. It could identify the patient.','contact'); });
   each(/\b\d{1,6}[ \t]+(?:[A-Za-z0-9.]+[ \t]+){0,4}(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Drive|Ln|Lane|Way|Ct|Court|Pkwy|Parkway|Hwy|Highway|Pl|Place)\b\.?/g, s=>add(s.trim(),'Street address. It could identify the patient.','contact'));
 
-  // 3. Clinical details from fields the physician left unchecked
+  // Only the selected broad concern may appear. Demographics, medications, labs,
+  // and any more detailed diagnosis are never faxed, even if a client marks them approved.
   if(patient){
-    if(!approved.has('agesex')&&patient.age){ const m=text.match(new RegExp('\\b'+patient.age+'[- ]?(?:year|yo\\b|y/o)','i')); if(m) add(m[0],'Age wasn’t checked for sharing.','unapproved'); }
-    [['dx',patient.dx,'Diagnosis wasn’t checked for sharing.'],['meds',patient.meds,'Medications weren’t checked for sharing.'],['labs',patient.labs,'Labs weren’t checked for sharing.']].forEach(([field,items,reason])=>{
-      if(approved.has(field)) return;
-      (items||[]).forEach(item=>{
-        const cands=[item]; if(field!=='dx') cands.push(item.split(/\s(?=\d)|,/)[0].trim());
-        for(const c of cands){ if(lowTopic.includes(norm(c))) continue; const hit=findPhrase(c); if(hit){ add(hit,reason,'unapproved'); break; } }
-      });
+    if(patient.age){const m=text.match(new RegExp('\\b'+patient.age+'[- ]?(?:year|yo\\b|y/o)','i'));if(m)add(m[0],'Patient age is not permitted in this fax.','unapproved');}
+    const sexLabel=patient.sex==='F'?'female':patient.sex==='M'?'male':'';
+    if(sexLabel){const hit=findPhrase(sexLabel);if(hit)add(hit,'Patient sex is not permitted in this fax.','unapproved');}
+    [['meds',patient.meds,'Medication information is not permitted in this fax.'],['labs',patient.labs,'Lab results are not permitted in this fax.']].forEach(([field,items,reason])=>{
+      (items||[]).forEach(item=>{const candidates=[item,item.split(/\s(?=\d)|,/)[0].trim()];for(const c of candidates){const hit=findPhrase(c);if(hit){add(hit,reason,'unapproved');break;}}});
+    });
+    const allowedConcern=norm(BROAD_CONCERN_LABELS[patient.general_concern]||'');
+    (patient.dx||[]).forEach(item=>{
+      const general=item.split(/[,;]|\b(?:suspected|about|new|with)\b/i)[0].trim(), fullHit=findPhrase(item), generalHit=findPhrase(general);
+      if(fullHit&&norm(item)!==norm(general)) add(fullHit,'Detailed diagnosis information is not permitted; share only the selected general concern.','unapproved');
+      if(generalHit&&norm(general)!==allowedConcern) add(generalHit,'Only the selected general concern may be shared.','unapproved');
+      if(generalHit&&!approved.has('dx')) add(generalHit,'The general concern was not approved for sharing.','unapproved');
     });
   }
   // Drop a flag when a longer flag already covers it ("Reyes" inside "Maria Reyes")
