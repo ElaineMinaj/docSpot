@@ -3,7 +3,6 @@
 'use strict';
 
 const AI_TAG = '<span class="ai">AI recommendation, simulated</span>';
-const SIM = '<span class="sim">Simulated</span>';
 const relLabel = r => ({connected:'Connected', joining:'Joining through referral', pending:'Invitation pending', outside:'Not connected'}[r]);
 const specChip = s => `<span class="spec-chip"><span class="spec-dot" style="background:${SPECIALTY_COLORS[s]}"></span>${esc(s)}</span>`;
 const statusPill = st => `<span class="status ${STATUS[st].tone}">${esc(STATUS[st].label)}</span>`;
@@ -132,7 +131,7 @@ function reqSteps(r){
     return `<li class="${skip?'':done?'done':now?(st.tone==='bad'?'fail':'now'):''}"><i>${done&&!skip?'✓':i+1}</i>${esc(t)}${skip?' (already connected)':''}</li>`;}).join('')}</ol>`;
 }
 function viewRequests(){
-  let h=`<section class="section" aria-labelledby="h-flow"><div class="section-head"><h2 id="h-flow">Your requests</h2><p>Reviewed by you, sent by secure fax or message, and tracked until the physician responds. ${SIM} No fax provider is connected.</p></div>`;
+  let h=`<section class="section" aria-labelledby="h-flow"><div class="section-head"><h2 id="h-flow">Your requests</h2><p>Reviewed by you, sent by secure fax or message, and tracked until the physician responds. Fax delivery is simulated in this prototype.</p></div>`;
   REQ_GROUPS.forEach(([key,title,statuses])=>{
     const list=S.requests.filter(r=>statuses.includes(r.status)); if(!list.length) return;
     h+=`<div class="req-group ${key}"><h3>${title} <span class="meta">${list.length}</span></h3>`;
@@ -157,7 +156,7 @@ function recipientFlow(){
   const v=S.rv, r=S.requests.find(x=>x.id===v.id); if(!r) return '';
   const p=doc(r.to), body=[rvInbox,rvLink,rvRespond,rvJoin,rvAccount][v.step](r,p,v);
   return `<div class="rv-screen" role="dialog" aria-modal="true" aria-labelledby="rv-title"><div class="rv-inner">
-  <div class="rv-top"><div><p class="meta" style="margin:0">The recipient's side: what ${esc(p.name)} experiences <span class="sim">Simulated</span></p>
+  <div class="rv-top"><div><p class="meta" style="margin:0">The recipient's side: what ${esc(p.name)} experiences (simulated)</p>
   <div class="stepper">${RV_STEPS.map((n,i)=>`<span class="${i===v.step?'cur':i<v.step?'done':''}"><i>${i<v.step?'✓':i+1}</i>${n}</span>`).join('')}</div></div>
   <button class="btn ghost small" data-action="close-modal">Back to Dr. Lee's view</button></div>${body}</div></div>`;
 }
@@ -219,14 +218,14 @@ function rvJoin(r,p,v){
 }
 function rvAccount(r,p,v){
   if(v.skipped) return `<div class="box"><h2 id="rv-title" tabindex="-1" style="margin:0 0 6px;font-size:20px">All set</h2><p style="margin:0">Your response went to ${esc(ME.short)}. You didn't join Impiricus, and nothing else changes: future requests will still reach you by fax, and you can join from any of them.</p></div><div class="rv-foot"><span></span><button class="btn" data-action="close-modal">Back to Dr. Lee's view</button></div>`;
-  if(r.status==='joining') return `<div class="box"><h2 id="rv-title" tabindex="-1" style="margin:0 0 6px;font-size:20px">Verifying your NPI…</h2><p class="meta" style="margin:0">Checking ${esc(p.npi||'your NPI')} against the NPI Registry. <span class="sim">Simulated</span></p></div>`;
+  if(r.status==='joining') return `<div class="box"><h2 id="rv-title" tabindex="-1" style="margin:0 0 6px;font-size:20px">Verifying your NPI…</h2><p class="meta" style="margin:0">Checking ${esc(p.npi||'your NPI')} against the NPI Registry.</p></div>`;
   const pt=r.patient?pat(r.patient):null, on=o=>Object.keys(o).filter(k=>o[k]);
   const consult=r.events.some(e=>/consult note/.test(e[1]));
   return `<div class="rv-home-head"><div style="display:flex;gap:12px;align-items:center">${avatar(p)}<div><h2 id="rv-title" tabindex="-1" style="margin:0;font-size:22px">Welcome to Impiricus, ${esc(p.name)}</h2><div class="meta">${esc(p.spec)}, ${esc(p.real?p.address:p.practice)}</div></div></div><span class="verified">NPI verified</span></div>
   <div class="rv-cols"><div>
   <div class="box"><h3>Your network</h3><div class="person" style="padding:8px 0;border:0"><div class="avatar g">AL</div><div class="body"><b>${esc(ME.name)}</b><div class="meta">${esc(ME.spec)}, ${esc(ME.practice)}. Connected through this ${esc(TYPE_LABEL[r.type].toLowerCase())}</div></div></div></div>
   <div class="box"><h3>Your requests</h3><div class="kvrow"><span>${esc(TYPE_LABEL[r.type])} from ${esc(ME.short)}</span><span class="status good">${r.type==='question'?'Answered':'Accepted'}</span></div>${pt?`<p style="margin:8px 0 4px"><b>${esc(pt.name)}</b>, ${pt.age}${pt.sex}. ${esc(r.topic)}</p>`:`<p style="margin:8px 0 4px">${esc(r.topic)}</p>`}
-  ${r.type==='referral'?(consult?'<p class="meta" style="margin:8px 0 0">Consult note sent back to Dr. Lee. The loop is closed.</p>':`<button class="btn small" data-action="rv-consult" style="margin-top:8px">Send consult note back</button> <span class="sim">Simulated</span>`):''}</div>
+  ${r.type==='referral'?(consult?'<p class="meta" style="margin:8px 0 0">Consult note sent back to Dr. Lee. The loop is closed.</p>':`<button class="btn small" data-action="rv-consult" style="margin-top:8px">Send consult note back</button>`):''}</div>
   </div><div>
   <div class="box"><h3>How colleagues reach you</h3><p style="margin:0">${on(v.prefs).map(k=>CONTACT_LABEL[k][0].toUpperCase()+CONTACT_LABEL[k].slice(1)).join(', ')||'No channels selected'}</p><p class="meta" style="margin:4px 0 0">Never by text message.</p></div>
   <div class="box"><h3>Impiricus services</h3><p style="margin:0">${on(v.services).map(k=>SERVICE_LABEL[k][0].toUpperCase()+SERVICE_LABEL[k].slice(1)).join(', ')||'None turned on. You can add them anytime.'}</p></div>
@@ -305,7 +304,7 @@ function stepRecommend(f){
 }
 function mslCard(drug,question){
   if(!drug) return '';
-  return `<div class="box" style="margin-top:16px;border-color:rgba(134,168,255,.35)"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><b>Also want the manufacturer's official answer?</b><span class="tag">Existing Impiricus service</span></div><p class="meta" style="margin:6px 0 10px">Send this to the ${esc(drug)} manufacturer's medical team through Impiricus for official, on-label information. Only your question is shared, never patient identifiers.</p><button class="btn ghost small" data-action="msl" data-d="${esc(drug)}" data-q="${esc(question||'')}">Send to the ${esc(drug)} medical team</button> ${SIM}</div>`;
+  return `<div class="box" style="margin-top:16px;border-color:rgba(134,168,255,.35)"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><b>Also want the manufacturer's official answer?</b><span class="tag">Existing Impiricus service</span></div><p class="meta" style="margin:6px 0 10px">Send this to the ${esc(drug)} manufacturer's medical team through Impiricus for official, on-label information. Only your question is shared, never patient identifiers.</p><button class="btn ghost small" data-action="msl" data-d="${esc(drug)}" data-q="${esc(question||'')}">Send to the ${esc(drug)} medical team</button></div>`;
 }
 function faxPreview(f,p,code){
   const date=new Date().toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'});
