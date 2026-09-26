@@ -3,7 +3,6 @@
 'use strict';
 
 const AI_TAG = '<span class="ai">AI recommendation, simulated</span>';
-const SIM = '<span class="sim">Simulated</span>';
 const relLabel = r => ({connected:'Connected', joining:'Joining through referral', pending:'Invitation pending', outside:'Not connected'}[r]);
 const specChip = s => `<span class="spec-chip"><span class="spec-dot" style="background:${SPECIALTY_COLORS[s]}"></span>${esc(s)}</span>`;
 const statusPill = st => `<span class="status ${STATUS[st].tone}">${esc(STATUS[st].label)}</span>`;
@@ -65,7 +64,7 @@ function viewNetwork(){
   if(S.mapView==='map'){
     h+=`<div class="netmap specialty-map">${graphSVG()}</div><div class="netlegend" aria-label="Connection status key"><span><i class="lg-node connected"></i>Connected</span><span><i class="lg-node joining"></i>Joining</span><span><i class="lg-node pending"></i>Pending</span></div>`;
   } else {
-    const rows=S.phys.filter(p=>p.rel!=='outside'||S.showOutside);
+    const rows=S.phys.filter(p=>p.rel!=='outside'||(S.showOutside&&!p.accessOnly));
     h+=`<div class="tablewrap"><table class="list"><caption class="meta" style="text-align:left;padding:10px 12px">Physicians in your network${S.showOutside?' and recommended physicians outside it':''}</caption><thead><tr><th scope="col">Physician</th><th scope="col">Specialty</th><th scope="col">Relationship</th><th scope="col">Shared patients</th><th scope="col">Drug experience</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead><tbody>${rows.map(p=>`<tr><td><b>${esc(p.name)}</b><div class="meta">${esc(p.practice)}</div></td><td>${specChip(p.spec)}</td><td>${relLabel(p.rel)}</td><td>${sharedPatients(p.id).length||'None'}</td><td class="meta">${Object.keys(p.drugs).filter(d=>p.drugs[d]!=='low').join(', ')||'None listed'}</td><td><button class="btn ghost small" data-action="select" data-id="${p.id}">View</button></td></tr>`).join('')}</tbody></table></div>`;
   }
   h+=`</div>${viewPanel()}</div></section>`;
@@ -81,7 +80,7 @@ function viewPanel(){
   h+=`<h4>Relevant drug experience</h4>${drugs.length?`<div class="chips">${drugs.map(d=>`<span class="chip drug">${esc(d)}, ${p.drugs[d]}</span>`).join('')}</div>`:'<p class="meta" style="margin:0">None listed</p>'}`;
   h+='<div class="btnrow">';
   if(p.rel==='connected'||p.rel==='joining'){
-    h+=`<button class="btn small" data-action="start" data-type="collab" data-to="${p.id}">Collaborate on care</button><button class="btn ghost small" data-action="start" data-type="question" data-to="${p.id}">Ask a question</button><button class="btn ghost small" data-action="start" data-type="referral" data-to="${p.id}">Refer a patient</button>`;
+    h+=`<button class="btn small" data-action="start" data-type="referral" data-to="${p.id}">Refer a patient</button>`;
   } else if(p.rel==='pending'){
     h+=`<button class="btn small" data-action="show-req" data-id="${req?req.id:''}">${req&&req.status==='failed'?'Fix failed fax':'View invitation status'}</button>`;
   } else {
@@ -96,7 +95,7 @@ function viewActions(){
   const icon=(d)=>`<div class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg></div>`;
   return `<section class="section" aria-labelledby="h-act"><div class="section-head"><h2 id="h-act">What do you need?</h2><p>Each action ends with a fax or message you review before it's sent.</p></div><div class="actions3">
   <button class="action" data-action="start" data-type="referral">${icon('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>')}<h3>Find a specialist</h3><p>Start from a patient who needs specialist care. Get matched physicians with the reasons, then send a referral.</p><span class="go">Choose a patient</span></button>
-  <button class="action" data-action="start" data-type="collab">${icon('<circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2 20c0-3 3-5 6-5s6 2 6 5M12 20c0-3 3-5 6-5 1.5 0 3 .5 4 1.3"/>')}<h3>Collaborate on care</h3><p>Find physicians already caring for the same patient or experienced with the same drug, and request a focused discussion.</p><span class="go">Choose a patient or drug</span></button>
+  <button class="action" data-action="start" data-type="referral" data-mode="access">${icon('<rect x="2" y="6" width="14" height="12" rx="2"/><path d="m16 10 6-3v10l-6-3"/>')}<h3>Telehealth &amp; clinical trials</h3><p>For patients far from specialty care. Find specialists who offer telehealth, or run clinical trials that support travel.</p><span class="go">Choose a patient</span></button>
   <button class="action" data-action="start" data-type="question">${icon('<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"/><path d="M12 8.5a1.8 1.8 0 0 1 1.8 1.8c0 1.2-1.8 1.6-1.8 2.9M12 16h.01"/>')}<h3>Ask a clinical question</h3><p>Type your question. An AI assistant suggests who is best placed to answer it and helps you route it.</p><span class="go">Write a question</span></button>
   </div></section>`;
 }
@@ -131,7 +130,7 @@ function reqSteps(r){
     return `<li class="${skip?'':done?'done':now?(st.tone==='bad'?'fail':'now'):''}"><i>${done&&!skip?'✓':i+1}</i>${esc(t)}${skip?' (already connected)':''}</li>`;}).join('')}</ol>`;
 }
 function viewRequests(){
-  let h=`<section class="section" aria-labelledby="h-flow"><div class="section-head"><h2 id="h-flow">Your requests</h2><p>Reviewed by you, sent by secure fax or message, and tracked until the physician responds. ${SIM} No fax provider is connected.</p></div>`;
+  let h=`<section class="section" aria-labelledby="h-flow"><div class="section-head"><h2 id="h-flow">Your requests</h2><p>Reviewed by you, sent by secure fax or message, and tracked until the physician responds. Fax delivery is simulated in this prototype.</p></div>`;
   REQ_GROUPS.forEach(([key,title,statuses])=>{
     const list=S.requests.filter(r=>statuses.includes(r.status)); if(!list.length) return;
     h+=`<div class="req-group ${key}"><h3>${title} <span class="meta">${list.length}</span></h3>`;
@@ -156,7 +155,7 @@ function recipientFlow(){
   const v=S.rv, r=S.requests.find(x=>x.id===v.id); if(!r) return '';
   const p=doc(r.to), body=[rvInbox,rvLink,rvRespond,rvJoin,rvAccount][v.step](r,p,v);
   return `<div class="rv-screen" role="dialog" aria-modal="true" aria-labelledby="rv-title"><div class="rv-inner">
-  <div class="rv-top"><div><p class="meta" style="margin:0">The recipient's side: what ${esc(p.name)} experiences <span class="sim">Simulated</span></p>
+  <div class="rv-top"><div><p class="meta" style="margin:0">The recipient's side: what ${esc(p.name)} experiences (simulated)</p>
   <div class="stepper">${RV_STEPS.map((n,i)=>`<span class="${i===v.step?'cur':i<v.step?'done':''}"><i>${i<v.step?'✓':i+1}</i>${n}</span>`).join('')}</div></div>
   <button class="btn ghost small" data-action="close-modal">Back to Dr. Lee's view</button></div>${body}</div></div>`;
 }
@@ -218,14 +217,14 @@ function rvJoin(r,p,v){
 }
 function rvAccount(r,p,v){
   if(v.skipped) return `<div class="box"><h2 id="rv-title" tabindex="-1" style="margin:0 0 6px;font-size:20px">All set</h2><p style="margin:0">Your response went to ${esc(ME.short)}. You didn't join Impiricus, and nothing else changes: future requests will still reach you by fax, and you can join from any of them.</p></div><div class="rv-foot"><span></span><button class="btn" data-action="close-modal">Back to Dr. Lee's view</button></div>`;
-  if(r.status==='joining') return `<div class="box"><h2 id="rv-title" tabindex="-1" style="margin:0 0 6px;font-size:20px">Verifying your NPI…</h2><p class="meta" style="margin:0">Checking ${esc(p.npi||'your NPI')} against the NPI Registry. <span class="sim">Simulated</span></p></div>`;
+  if(r.status==='joining') return `<div class="box"><h2 id="rv-title" tabindex="-1" style="margin:0 0 6px;font-size:20px">Verifying your NPI…</h2><p class="meta" style="margin:0">Checking ${esc(p.npi||'your NPI')} against the NPI Registry.</p></div>`;
   const pt=r.patient?pat(r.patient):null, on=o=>Object.keys(o).filter(k=>o[k]);
   const consult=r.events.some(e=>/consult note/.test(e[1]));
   return `<div class="rv-home-head"><div style="display:flex;gap:12px;align-items:center">${avatar(p)}<div><h2 id="rv-title" tabindex="-1" style="margin:0;font-size:22px">Welcome to Impiricus, ${esc(p.name)}</h2><div class="meta">${esc(p.spec)}, ${esc(p.real?p.address:p.practice)}</div></div></div><span class="verified">NPI verified</span></div>
   <div class="rv-cols"><div>
   <div class="box"><h3>Your network</h3><div class="person" style="padding:8px 0;border:0"><div class="avatar g">AL</div><div class="body"><b>${esc(ME.name)}</b><div class="meta">${esc(ME.spec)}, ${esc(ME.practice)}. Connected through this ${esc(TYPE_LABEL[r.type].toLowerCase())}</div></div></div></div>
   <div class="box"><h3>Your requests</h3><div class="kvrow"><span>${esc(TYPE_LABEL[r.type])} from ${esc(ME.short)}</span><span class="status good">${r.type==='question'?'Answered':'Accepted'}</span></div>${pt?`<p style="margin:8px 0 4px"><b>${esc(pt.name)}</b>, ${pt.age}${pt.sex}. ${esc(r.topic)}</p>`:`<p style="margin:8px 0 4px">${esc(r.topic)}</p>`}
-  ${r.type==='referral'?(consult?'<p class="meta" style="margin:8px 0 0">Consult note sent back to Dr. Lee. The loop is closed.</p>':`<button class="btn small" data-action="rv-consult" style="margin-top:8px">Send consult note back</button> <span class="sim">Simulated</span>`):''}</div>
+  ${r.type==='referral'?(consult?'<p class="meta" style="margin:8px 0 0">Consult note sent back to Dr. Lee. The loop is closed.</p>':`<button class="btn small" data-action="rv-consult" style="margin-top:8px">Send consult note back</button>`):''}</div>
   </div><div>
   <div class="box"><h3>How colleagues reach you</h3><p style="margin:0">${on(v.prefs).map(k=>CONTACT_LABEL[k][0].toUpperCase()+CONTACT_LABEL[k].slice(1)).join(', ')||'No channels selected'}</p><p class="meta" style="margin:4px 0 0">Never by text message.</p></div>
   <div class="box"><h3>Impiricus services</h3><p style="margin:0">${on(v.services).map(k=>SERVICE_LABEL[k][0].toUpperCase()+SERVICE_LABEL[k].slice(1)).join(', ')||'None turned on. You can add them anytime.'}</p></div>
@@ -235,7 +234,7 @@ function rvAccount(r,p,v){
 
 /* ---------- Action sheet ---------- */
 const STEP_NAMES = {
-  referral: to => to?['Patient','Review and approve','Track']:['Patient','Specialist','Review and approve','Track'],
+  referral: (to,f) => f&&f.access?['Patient','Options','Review and approve','Track']:to?['Patient','Review and approve','Track']:['Patient','Specialist','Review and approve','Track'],
   collab:   to => to?['Patient','Review and approve','Track']:['Patient or drug','Physician','Review and approve','Track'],
   question: to => to?['Question','Review and approve','Track']:['Question','Who to ask','Review and approve','Track'],
   connect:  () => ['Review and approve','Track']
@@ -244,15 +243,16 @@ const SHEET_TITLE = {referral:'Find a specialist', collab:'Collaborate on care',
 
 function viewSheet(){
   const f=S.flow; if(!f) return '';
-  const names=STEP_NAMES[f.type](f.fixedTo), cur=names[f.step];
+  const names=STEP_NAMES[f.type](f.fixedTo,f), cur=names[f.step];
   let body='';
   if(cur==='Patient'||cur==='Patient or drug') body=stepPatient(f);
   else if(cur==='Specialist'||cur==='Physician'||cur==='Who to ask') body=stepRecommend(f);
+  else if(cur==='Options') body=stepAccess(f);
   else if(cur==='Question') body=stepQuestion(f);
   else if(cur==='Review and approve') body=stepReview(f);
   else body=stepTrack(f);
   const onReview=cur==='Review and approve';
-  return `<div class="sheet-bg" data-action="close-sheet"></div><aside class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title"><div class="sheet-head"><div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><h2 id="sheet-title">${SHEET_TITLE[f.type]}</h2><button class="btn ghost small" data-action="close-sheet">Close</button></div><div class="stepper">${names.map((n,i)=>`<span class="${i===f.step?'cur':i<f.step?'done':''}"><i>${i<f.step?'✓':i+1}</i>${n}</span>`).join('')}</div></div>
+  return `<div class="sheet-bg" data-action="close-sheet"></div><aside class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title"><div class="sheet-head"><div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><h2 id="sheet-title">${f.access?'Telehealth &amp; clinical trials':SHEET_TITLE[f.type]}</h2><button class="btn ghost small" data-action="close-sheet">Close</button></div><div class="stepper">${names.map((n,i)=>`<span class="${i===f.step?'cur':i<f.step?'done':''}"><i>${i<f.step?'✓':i+1}</i>${n}</span>`).join('')}</div></div>
   <div class="sheet-body">${body}</div>
   <div class="sheet-foot"><div>${f.step>0&&cur!=='Track'?'<button class="btn ghost" data-action="back">Back</button>':''}</div><div style="display:flex;gap:8px">${onReview?`<button class="btn" data-action="send" ${f.approved?'':'disabled'}>${doc(f.to).rel==='connected'||doc(f.to).rel==='joining'?'Send secure message':'Send secure fax'}</button>`:''}${cur==='Track'?'<button class="btn" data-action="close-sheet">Done</button>':''}</div></div></aside>`;
 }
@@ -267,8 +267,9 @@ function stepPatient(f){
   h+=`<p class="meta" style="margin:0 0 12px">Your patients, already available in Impiricus. Only initials and the reason for care are shown here.</p>`;
   list.forEach(pt=>{
     const team=pt.careTeam.map(doc);
-    const tag=f.type==='referral'?`<span class="tag ${pt.flag==='Needs specialist care'?'need':''}">${esc(pt.flag)}</span>`:`<span class="tag">${team.length?`${team.length} other ${team.length===1?'physician':'physicians'} involved`:'No shared care team'}</span>`;
-    h+=`<button class="opt" data-action="pick-patient" data-id="${pt.id}"><div class="avatar c">${pt.initials.replace(/\./g,'')}</div><div class="grow"><b>${pt.initials}, ${pt.age}${pt.sex}</b> <span class="meta">MRN ${pt.mrn}</span><div class="meta">${esc(pt.summary)}</div><div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${tag}${f.type==='referral'?specChip(pt.needs):''}</div></div></button>`;
+    const loc=f.access?accessLocation(pt.id):null;
+    const tag=loc?`<span class="tag ${loc.rural?'need':''}">${esc(loc.home_city)}, ${esc(loc.state)}${loc.rural?', rural':''}</span><span class="tag">${loc.miles_to_nearest_in_person_specialist} mi to nearest accepting ${esc(pt.needs.toLowerCase())}</span>`:f.type==='referral'?`<span class="tag ${pt.flag==='Needs specialist care'?'need':''}">${esc(pt.flag)}</span>`:`<span class="tag">${team.length?`${team.length} other ${team.length===1?'physician':'physicians'} involved`:'No shared care team'}</span>`;
+    h+=`<button class="opt" data-action="pick-patient" data-id="${pt.id}"><div class="avatar c">${pt.initials.replace(/\./g,'')}</div><div class="grow"><b>${pt.initials}, ${pt.age}${pt.sex}</b> <span class="meta">MRN ${pt.mrn}</span><div class="meta">${esc(pt.summary)}</div><div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${tag}${f.type==='referral'&&!loc?specChip(pt.needs):''}</div></div></button>`;
   });
   return h;
 }
@@ -302,9 +303,24 @@ function stepRecommend(f){
   }
   return h;
 }
+function stepAccess(f){
+  const pt=pat(f.patient), loc=accessLocation(pt.id), flt=f.accessFilter, list=accessOptions(pt,flt);
+  const pill=(k,label)=>`<button class="pill" data-action="access-filter" data-k="${k}" aria-pressed="${!!flt[k]}">${label}</button>`;
+  let h=`<div class="box" style="margin-bottom:14px"><b>${pt.initials}, ${pt.age}${pt.sex}</b><div class="meta">${esc(loc?loc.general_condition:pt.summary)}. Needs ${esc(pt.needs.toLowerCase())}.</div>${loc?`<div class="meta" style="margin-top:4px">Lives in ${esc(loc.home_city)}, ${esc(loc.state)}${loc.rural?' (rural)':''}. Nearest in-person ${esc(pt.needs.toLowerCase())} accepting new patients: about ${loc.miles_to_nearest_in_person_specialist} miles.</div>`:''}</div>`;
+  h+=`<div class="pillbar" role="group" aria-label="Filter options">${pill('telehealth','Telehealth for new patients')}${pill('trials','Clinical trials')}${pill('travel','Travel support')}</div>`;
+  h+=`<p class="disclaimer">Sample data for the demo. Ranked by telehealth availability, whether they're accepting patients, distance, and wait time. Trial sponsorship and travel support are filters only and never affect ranking.</p>`;
+  if(!list.length) return h+'<p class="meta">No specialists in the sample data match these filters. Try turning one off.</p>';
+  list.forEach(x=>{
+    const p=x.p;
+    h+=`<div class="box access-card"><div style="display:flex;gap:12px;align-items:flex-start">${avatar(p)}<div class="grow" style="flex:1;min-width:0"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>${esc(p.name)}</b>${specChip(p.spec)}${x.teleNew?'<span class="chip on">Telehealth</span>':''}</div><div class="meta">${esc(p.practice)}, ${esc(p.city)}</div><ul class="reasons">${x.reasons.map(r=>`<li class="${r.k}">${esc(r.t)}</li>`).join('')}</ul></div></div>`;
+    x.trials.forEach(t=>{ h+=`<div class="trial"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>${esc(t.title)}</b><span class="tag">${esc(t.id)}</span></div><div class="meta">${esc(t.phase)}, ${esc(t.status.toLowerCase())}. ${esc(t.sponsor.type)} sponsor. ${t.remote_visits_allowed?'Some visits can be remote.':'In-person visits.'}</div><div class="meta">Who it's for: ${esc(t.eligibility_summary)}.</div>${t.travel_support.offered?`<div class="travel">Travel support: ${esc(t.travel_support.covers.join(', '))}. ${esc(t.travel_support.note)}.</div>`:`<div class="meta">${esc(t.travel_support.note)}.</div>`}<button class="btn ghost small" data-action="pick-access" data-id="${p.id}" data-mode="trial" data-trial="${esc(t.id)}" style="margin-top:8px">Refer for trial eligibility</button></div>`; });
+    h+=`<div class="btnrow" style="margin-top:10px">${x.teleNew?`<button class="btn small" data-action="pick-access" data-id="${p.id}" data-mode="telehealth">Request telehealth visit</button>`:''}${!x.teleNew&&!x.trials.length?`<button class="btn ghost small" data-action="pick-access" data-id="${p.id}" data-mode="inperson">Request in-person referral</button>`:''}</div></div>`;
+  });
+  return h;
+}
 function mslCard(drug,question){
   if(!drug) return '';
-  return `<div class="box" style="margin-top:16px;border-color:rgba(134,168,255,.35)"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><b>Also want the manufacturer's official answer?</b><span class="tag">Existing Impiricus service</span></div><p class="meta" style="margin:6px 0 10px">Send this to the ${esc(drug)} manufacturer's medical team through Impiricus for official, on-label information. Only your question is shared, never patient identifiers.</p><button class="btn ghost small" data-action="msl" data-d="${esc(drug)}" data-q="${esc(question||'')}">Send to the ${esc(drug)} medical team</button> ${SIM}</div>`;
+  return `<div class="box" style="margin-top:16px;border-color:rgba(134,168,255,.35)"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><b>Also want the manufacturer's official answer?</b><span class="tag">Existing Impiricus service</span></div><p class="meta" style="margin:6px 0 10px">Send this to the ${esc(drug)} manufacturer's medical team through Impiricus for official, on-label information. Only your question is shared, never patient identifiers.</p><button class="btn ghost small" data-action="msl" data-d="${esc(drug)}" data-q="${esc(question||'')}">Send to the ${esc(drug)} medical team</button></div>`;
 }
 function faxPreview(f,p,code){
   const date=new Date().toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'});
@@ -314,7 +330,7 @@ function faxPreview(f,p,code){
 }
 function stepReview(f){
   const p=doc(f.to), pt=f.patient?pat(f.patient):null, inApp=p.rel==='connected'||p.rel==='joining';
-  let h=`<div class="review"><div><div class="box"><h3>Recipient</h3><div class="kvrow"><span>Physician</span><span>${esc(p.name)}</span></div><div class="kvrow"><span>Specialty</span><span>${esc(p.spec)}</span></div><div class="kvrow"><span>Practice</span><span>${esc(p.practice)}</span></div><div class="kvrow"><span>NPI</span><span>${p.npi||'In NPI Registry (number not in export)'}</span></div>${p.real?'<div class="kvrow"><span>Data source</span><span>NPI Registry, real practice</span></div>':''}<div class="kvrow"><span>Delivery</span><span>${inApp?'Secure in-app message':'Secure fax to '+esc(p.fax)}</span></div><div class="kvrow"><span>Relationship</span><span>${relLabel(p.rel)}</span></div>${f.fixedTo||f.type==='connect'?'':'<button class="btn link" data-action="back" style="margin-top:8px">Choose a different physician</button>'}</div>`;
+  let h=`<div class="review"><div><div class="box"><h3>Recipient</h3><div class="kvrow"><span>Physician</span><span>${esc(p.name)}</span></div><div class="kvrow"><span>Specialty</span><span>${esc(p.spec)}</span></div><div class="kvrow"><span>Practice</span><span>${esc(p.practice)}</span></div><div class="kvrow"><span>NPI</span><span>${p.npi||'In NPI Registry (number not in export)'}</span></div>${p.real?'<div class="kvrow"><span>Data source</span><span>NPI Registry, real practice</span></div>':''}<div class="kvrow"><span>Delivery</span><span>${inApp?'Secure in-app message':'Secure fax to '+esc(p.fax)}</span></div><div class="kvrow"><span>Relationship</span><span>${relLabel(p.rel)}</span></div>${f.accessMode?`<div class="kvrow"><span>Requesting</span><span>${f.accessMode==='trial'?'Clinical trial eligibility ('+esc(f.accessTrial)+')':f.accessMode==='telehealth'?'Telehealth visit':'In-person referral'}</span></div><div class="kvrow"><span>Data source</span><span>Sample data (fictional)</span></div>`:''}${f.fixedTo||f.type==='connect'?'':'<button class="btn link" data-action="back" style="margin-top:8px">Choose a different physician</button>'}</div>`;
   if(f.type==='referral'||f.type==='collab') h+=`<div class="box"><h3>${f.type==='referral'?'Reason for referral':'Discussion topic'}</h3><input type="text" data-bind="topic" value="${esc(f.topic)}" aria-label="${f.type==='referral'?'Reason for referral':'Discussion topic'}"></div>`;
   h+=`<div class="box"><h3>Information to share</h3>${pt?`<p class="meta" style="margin:0 0 6px">Patient ${pt.initials}, ${pt.age}${pt.sex}. Only what's checked is included.</p>`:''}${f.fields.map(x=>`<label class="check ${x.locked?'locked':''}"><input type="checkbox" data-field="${x.id}" ${x.on?'checked':''} ${x.locked?'disabled':''}><span>${esc(x.label)}${x.note?`<small>${esc(x.note)}</small>`:''}</span></label>`).join('')}</div></div>`;
   h+=`<div><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px"><b>${inApp?'Message':'Fax'} draft</b><span class="ai">${f.drafting?'AI draft: writing…':esc(DRAFT_LABEL[f.draftSource]||DRAFT_LABEL.template)}</span></div><textarea data-bind="text" style="min-height:230px" aria-label="Draft text" aria-busy="${!!f.drafting}" ${f.drafting?'disabled placeholder="The AI is drafting from the information you checked…"':''}>${f.drafting?'':esc(f.text)}</textarea><div style="display:flex;gap:10px;margin:8px 0 14px;flex-wrap:wrap"><button class="btn ghost small" data-action="regen" ${f.drafting?'disabled':''}>Regenerate from checked information</button><button class="btn ghost small" data-action="preview" aria-expanded="${!!f.showPreview}" ${f.drafting?'disabled':''}>${f.showPreview?'Hide':'Show'} ${inApp?'message':'fax'} preview</button></div>${f.showPreview&&!f.drafting?faxPreview(f,p,'A7K-'+(S.seq+1)):''}${privacyBox(f)}

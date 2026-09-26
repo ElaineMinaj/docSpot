@@ -133,6 +133,25 @@ function taxonomyToSpecialty(tax){
 }
 function titleCase(str){ return String(str||'').toLowerCase().replace(/\b([a-z])/g,m=>m.toUpperCase()).replace(/\bIi\b/g,'II').replace(/\bIii\b/g,'III'); }
 function formatPhone(str){ const d=String(str||'').replace(/\D/g,'').slice(-10); return d.length===10?`(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`:''; }
+// ---------- Telehealth and clinical-trial access (fictional sample data in data/access.js) ----------
+// Straight-line miles between two {lat,lng} points.
+function milesBetween(a,b){
+  const R=3959, rad=x=>x*Math.PI/180, dLat=rad(b.lat-a.lat), dLng=rad(b.lng-a.lng);
+  const h=Math.sin(dLat/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+// Access specialists join the physician list as "outside your network", but only appear in this feature.
+function loadAccessPhysicians(){
+  if(typeof ACCESS_DATA==='undefined') return [];
+  return ACCESS_DATA.specialists.map(s=>({
+    id:s.id, accessOnly:true, name:s.name, cred:s.credentials, spec:s.specialty, practice:s.practice, city:`${s.city}, ${s.state}`,
+    lat:s.lat, lng:s.lng, fax:s.fax, dist:null, rel:'outside', link:'', hospital:'', drugs:{}, accepting:s.accepting_new_patients,
+    respond:'Unknown', waitDays:s.typical_wait_days, languages:s.languages, telehealth:s.telehealth, trialIds:s.trial_ids
+  }));
+}
+function accessTrial(id){ return typeof ACCESS_DATA==='undefined'?null:ACCESS_DATA.clinical_trials.find(t=>t.id===id); }
+function accessLocation(patientId){ return typeof ACCESS_DATA==='undefined'?null:ACCESS_DATA.patient_locations.find(l=>l.patient_id===patientId); }
+
 function loadRealPhysicians(){
   if(typeof REAL_PHYSICIANS==='undefined'||!Array.isArray(REAL_PHYSICIANS)) return [];
   const out=[], seen=new Set();

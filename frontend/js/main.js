@@ -58,15 +58,15 @@ async function generateDraft(){
 }
 
 const COLLAB_TOPICS = {pt2:'Next step after semaglutide with A1c still above goal', pt3:'Anticoagulation plan with declining kidney function', pt6:'Evaluating new joint pain during infliximab treatment'};
-function stepIndex(name){ return STEP_NAMES[S.flow.type](S.flow.fixedTo).indexOf(name); }
+function stepIndex(name){ return STEP_NAMES[S.flow.type](S.flow.fixedTo,S.flow).indexOf(name); }
 function prepareReview(){
   const f=S.flow, pt=f.patient?pat(f.patient):null;
   f.fields=shareFields(f.type,pt); f.text=''; f.edited=false; f.approved=false; f.showPreview=false;
   f.step=stepIndex('Review and approve');
   generateDraft();
 }
-function startFlow(type,to){
-  S.flow={type,step:0,fixedTo:to||null,to:to||null,mode:'patient',patient:null,drug:null,question:'',topic:type==='connect'?'Invitation to connect':'',fields:[],text:'',edited:false,approved:false};
+function startFlow(type,to,mode){
+  S.flow={type,step:0,fixedTo:to||null,to:to||null,access:mode==='access',accessFilter:{},accessMode:null,accessTrial:null,mode:'patient',patient:null,drug:null,question:'',topic:type==='connect'?'Invitation to connect':'',fields:[],text:'',edited:false,approved:false};
   if(type==='connect') prepareReview();
   render();
   setTimeout(()=>{const b=document.querySelector('.sheet .opt, .sheet textarea, .sheet .btn');if(b)b.focus();},0);
@@ -82,7 +82,7 @@ document.addEventListener('click',e=>{
     case 'select': S.mapSel=id; render(); break;
     case 'mapview': S.mapView=t.dataset.v; render(); break;
     case 'specfilter': S.specFilter=S.specFilter===t.dataset.s?null:t.dataset.s; render(); break;
-    case 'start': startFlow(t.dataset.type,t.dataset.to); break;
+    case 'start': startFlow(t.dataset.type,t.dataset.to,t.dataset.mode); break;
     case 'close-sheet': S.flow=null; render(); break;
     case 'back': f.step=Math.max(0,f.step-1); f.approved=false; render(); break;
     case 'cmode': f.mode=t.dataset.v; render(); break;
@@ -94,6 +94,11 @@ document.addEventListener('click',e=>{
       if(f.fixedTo){ f.to=f.fixedTo; prepareReview(); } else f.step++;
       render(); break; }
     case 'pick-doc': f.to=id; prepareReview(); render(); break;
+    case 'access-filter': f.accessFilter[t.dataset.k]=!f.accessFilter[t.dataset.k]; f._keepScroll=true; render(); break;
+    case 'pick-access': {
+      const pt=pat(f.patient), trial=t.dataset.trial?accessTrial(t.dataset.trial):null;
+      f.to=id; f.accessMode=t.dataset.mode; f.accessTrial=trial?trial.id:null; f.topic=accessTopic(pt,f.accessMode,trial);
+      prepareReview(); render(); break; }
     case 'example': f.question=t.dataset.q; render(); break;
     case 'ask-next': {
       const q=document.getElementById('q-text').value.trim(); f.patient=document.getElementById('q-patient').value||null;

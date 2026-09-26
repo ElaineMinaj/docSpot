@@ -376,6 +376,11 @@ tr.expand td{background:var(--bg-2)}
   .req-detail{padding-left:16px}
 }
 
+/* Telehealth and clinical trials */
+.access-card .trial{background:var(--bg-2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:10px;font-size:14px}
+.access-card .trial .meta{margin-top:3px}
+.access-card .travel{margin-top:6px;font-size:13px;color:var(--connected)}
+
 /* Recipient's side walkthrough */
 .rv-screen{position:fixed;inset:0;z-index:55;background:var(--bg);overflow:auto;padding:calc(18px + env(safe-area-inset-top,0px)) 24px calc(40px + env(safe-area-inset-bottom,0px))}
 .rv-inner{max-width:1100px;margin:0 auto}
