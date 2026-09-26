@@ -25,6 +25,8 @@ input[type=checkbox]{accent-color:var(--accent);width:17px;height:17px}
 .btn.ghost{background:transparent;color:var(--ink);border-color:var(--line);font-weight:600}
 .btn.ghost:hover{background:var(--surface-2);filter:none}
 .btn.small{padding:5px 11px;font-size:13.5px}
+.btn.link{background:transparent;border-color:transparent;color:var(--accent);font-weight:600;padding:5px 4px;text-decoration:underline;text-underline-offset:3px}
+.btn.link:hover{filter:none;color:var(--ink)}
 .bellwrap{position:relative}
 .bell{position:relative;border:1px solid var(--line);background:var(--bg-2);color:var(--ink);border-radius:9px;padding:6px 11px;cursor:pointer;font-weight:600}
 .badge{position:absolute;top:-6px;right:-6px;background:var(--danger);color:#fff;border-radius:999px;font-size:11px;font-weight:700;min-width:18px;height:18px;display:flex;align-items:center;justify-content:center;padding:0 5px}
