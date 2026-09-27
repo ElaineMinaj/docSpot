@@ -1,6 +1,6 @@
-# Colleague Connect
+# DocSpot
 
-Colleague Connect is a browser-based prototype for helping physicians find colleagues, coordinate referrals, and ask clinical questions. It combines a specialty-grouped physician connection map with guided referral and messaging workflows. The sender reviews each draft before the prototype simulates sending it.
+DocSpot is a browser-based prototype for helping physicians find colleagues, coordinate referrals, and ask clinical questions. It combines a specialty-grouped physician connection map with guided referral and messaging workflows. The sender reviews each draft before the prototype simulates sending it.
 
 > **Prototype notice:** This repository is a demonstration, not a production clinical communication system. The included patient records and access data are sample data. Do not enter real patient information or use the app to send real referrals or clinical messages.
 

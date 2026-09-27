@@ -1,4 +1,4 @@
-"""Colleague Connect backend: AI features for the e-fax workflow (OpenAI or Claude).
+"""DocSpot backend: AI features for the e-fax workflow (OpenAI or Claude).
 
 Run from the backend/ folder:  uvicorn main:app --reload --port 8000
 The API key lives in backend/.env (never in the browser).
@@ -21,7 +21,7 @@ import ai  # noqa: E402
 from privacy import pattern_check  # noqa: E402
 from consent import router as consent_router  # noqa: E402
 
-app = FastAPI(title="Colleague Connect AI")
+app = FastAPI(title="DocSpot AI")
 # Local prototype: the page is opened from Live Server or straight from disk
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 app.include_router(consent_router)
@@ -65,7 +65,7 @@ Never include or infer a patient name, initials, ID, age, date, address, medicat
 
 TYPE_ASK = {
     "referral": "a referral asking the recipient to evaluate the patient",
-    "connect": "an invitation to connect on Colleague Connect, a secure way for physicians to share referrals and questions",
+    "connect": "an invitation to connect on DocSpot, a secure way for physicians to share referrals and questions",
 }
 PURPOSE_TEXT = {
     "specialty_evaluation": "specialty evaluation",

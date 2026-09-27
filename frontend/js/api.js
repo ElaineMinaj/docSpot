@@ -1,5 +1,5 @@
 // api.js
-// Talks to the Colleague Connect backend (backend/, FastAPI + Claude). Every call has a short
+// Talks to the DocSpot backend (backend/, FastAPI + Claude). Every call has a short
 // timeout and a non-AI fallback, so the demo keeps working when the backend is off.
 // The API key lives only on the backend; nothing here needs it.
 'use strict';

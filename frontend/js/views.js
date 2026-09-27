@@ -9,7 +9,7 @@ const statusPill = st => `<span class="status ${STATUS[st].tone}">${esc(STATUS[s
 const avatar = p => `<div class="avatar ${p.rel==='connected'||p.rel==='joining'?'g':'c'}" style="background:${SPECIALTY_COLORS[p.spec]}22;color:${SPECIALTY_COLORS[p.spec]}">${initialsOf(p)}</div>`;
 
 function renderTop(){
-  return `<div class="brand"><svg width="30" height="22" viewBox="0 0 30 22" aria-hidden="true"><circle cx="10" cy="11" r="8" fill="var(--accent)"/><circle cx="20" cy="11" r="8" fill="var(--connected)" opacity=".85"/></svg>Impiricus <span style="color:var(--muted);font-weight:600">Colleague Connect</span></div>
+  return `<div class="brand"><svg width="30" height="22" viewBox="0 0 30 22" aria-hidden="true"><circle cx="10" cy="11" r="8" fill="var(--accent)"/><circle cx="20" cy="11" r="8" fill="var(--connected)" opacity=".85"/></svg>Impiricus <span style="color:var(--muted);font-weight:600">DocSpot</span></div>
   <span class="meta">${esc(ME.name)}, ${esc(ME.spec)}</span><span class="verified">Verified physician</span>
   <button class="btn ghost small" data-action="reset">Reset demo</button>`;
 }
@@ -207,7 +207,7 @@ function rvRespond(r,p,v){
   const shared=recipientFields(r).filter(x=>!/Name and date of birth/.test(x));
   const opts=t==='connect'?[['accept','Accept the invitation'],['decline','Not now']]
     :[['accept',t==='referral'?'Accept the referral':t==='collab'?'Accept the discussion':'Answer the question'],['call','Ask for a phone call instead'],['decline','Decline']];
-  return `<div class="box"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>Impiricus Colleague Connect</b><span class="tag">Code verified</span></div>
+  return `<div class="box"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>Impiricus DocSpot</b><span class="tag">Code verified</span></div>
   <h2 id="rv-title" tabindex="-1" style="margin:10px 0 4px;font-size:20px">${esc(ME.name)} sent you a ${esc(TYPE_LABEL[t].toLowerCase())}</h2><p class="meta" style="margin:0">${esc(ME.spec)}, ${esc(ME.practice)}, ${esc(ME.city)}</p>
   <p style="margin:12px 0 4px"><b>${t==='question'?'Question':t==='connect'?'Message':'Topic'}:</b> ${esc(r.topic)}</p>
   ${pt?`<p class="meta" style="margin:4px 0 0">Shared so far: ${esc(shared.join(', ')||'topic only')}.</p><p class="privacy">Patient name and date of birth are released only if you accept.</p>`:''}</div>
@@ -227,7 +227,7 @@ function rvJoin(r,p,v){
   if(!v.joinYes) return h+`<div class="btnrow" style="margin-top:0"><button class="btn" data-action="rv-joinyes">Join Impiricus (free)</button><button class="btn ghost" data-action="rv-joinno">Not now</button></div></div>`;
   const box=(grp,k,label,sub)=>`<label class="check"><input type="checkbox" data-rv="${grp}" value="${k}" ${v[grp][k]?'checked':''}><span>${label}${sub?`<small>${sub}</small>`:''}</span></label>`;
   return h+`<h3>How colleagues can reach you</h3>${box('prefs','fax','Fax','What you use today. Stays on unless you turn it off.')}${box('prefs','inapp','Secure in-app messages','')}${box('prefs','email','Email','')}
-  <p class="privacy">Colleague Connect never uses text messages (SMS).</p>
+  <p class="privacy">DocSpot never uses text messages (SMS).</p>
   <h3 style="margin-top:14px">Optional Impiricus services</h3><p class="meta" style="margin:0 0 4px">Nothing is turned on unless you choose it. Change these anytime.</p>
   ${box('services','samples','Samples and bridge supply for your patients','Through Impiricus partners')}${box('services','msl','Manufacturer medical team for drug questions','Official, on-label answers')}${box('services','support','Patient support programs','Copay help and prior authorization support')}
   <div class="btnrow"><button class="btn" data-action="rv-join">Verify my NPI and join</button><button class="btn ghost" data-action="rv-joinno">Not now</button></div></div>`;
@@ -347,7 +347,7 @@ function qrSvg(text){
 }
 function faxPreview(f,p,code){
   const date=new Date().toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'});
-  return `<div class="fax"><div class="stamp">Simulated</div><div class="fax-head"><span>SECURE FAX: ${TYPE_LABEL[f.type].toUpperCase()}</span><span>Page 1 of ${f.type==='connect'?1:2}</span></div><table><tr><td>To:</td><td>${esc(p.name)}, ${esc(p.practice)}<br>Fax ${esc(p.fax)}</td></tr><tr><td>From:</td><td>${esc(ME.name)}, ${esc(ME.practice)}</td></tr><tr><td>Date:</td><td>${date}</td></tr></table><pre>${esc(f.text)}</pre><div class="respond"><b>To respond (no account needed):</b><div class="qr-row">${qrSvg('https://impiricus.example/cc/'+code)}<div>1. Scan this QR code with your phone to open your secure response page. It works from your screen too.<br>Code: ${code}</div></div>2. Or tick and fax this page back to ${RETURN_FAX}:<br>${f.type==='connect'?`[ ] Accept the invitation<br>[ ] Not now`:`[ ] ${f.type==='referral'?'Accept the referral':f.type==='collab'?'Accept the discussion':'I\u2019ll answer (scan the QR code to reply)'}<br>[ ] Please call me instead: ______________<br>[ ] Decline`}</div><p class="fine" style="margin-top:10px">Sent securely through Impiricus Colleague Connect. Confidential. Intended only for the named recipient. If received in error, notify the sender and destroy this document.</p></div>`;
+  return `<div class="fax"><div class="stamp">Simulated</div><div class="fax-head"><span>SECURE FAX: ${TYPE_LABEL[f.type].toUpperCase()}</span><span>Page 1 of ${f.type==='connect'?1:2}</span></div><table><tr><td>To:</td><td>${esc(p.name)}, ${esc(p.practice)}<br>Fax ${esc(p.fax)}</td></tr><tr><td>From:</td><td>${esc(ME.name)}, ${esc(ME.practice)}</td></tr><tr><td>Date:</td><td>${date}</td></tr></table><pre>${esc(f.text)}</pre><div class="respond"><b>To respond (no account needed):</b><div class="qr-row">${qrSvg('https://impiricus.example/cc/'+code)}<div>1. Scan this QR code with your phone to open your secure response page. It works from your screen too.<br>Code: ${code}</div></div>2. Or tick and fax this page back to ${RETURN_FAX}:<br>${f.type==='connect'?`[ ] Accept the invitation<br>[ ] Not now`:`[ ] ${f.type==='referral'?'Accept the referral':f.type==='collab'?'Accept the discussion':'I\u2019ll answer (scan the QR code to reply)'}<br>[ ] Please call me instead: ______________<br>[ ] Decline`}</div><p class="fine" style="margin-top:10px">Sent securely through Impiricus DocSpot. Confidential. Intended only for the named recipient. If received in error, notify the sender and destroy this document.</p></div>`;
 }
 function stepReview(f){
   const p=doc(f.to), pt=f.patient?pat(f.patient):null;

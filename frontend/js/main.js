@@ -14,7 +14,7 @@ function notify(title,msg,tone){
 function render(){
   document.getElementById('topbar').innerHTML=renderTop();
   document.getElementById('app').innerHTML=
-    `<div class="page-title"><div><h1>Colleague Connect</h1><p>Refer patients, work through shared care, and ask colleagues who've seen it before. Every message is reviewed by you before it's sent.</p></div></div>`
+    `<div class="page-title"><div><h1>DocSpot</h1><p>Refer patients, work through shared care, and ask colleagues who've seen it before. Every message is reviewed by you before it's sent.</p></div></div>`
     +viewSummary()+viewNetwork()+viewActions()+viewRequests();
   const root=document.getElementById('sheet-root');
   const body=root.querySelector('.sheet-body'), top=body?body.scrollTop:0;

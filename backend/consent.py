@@ -6,7 +6,7 @@ the app polls /consent/{token}/status and releases the approved information only
 
 Email settings live in backend/.env (never committed):
   RESEND_API_KEY=a Resend API key (preferred: properly authenticated, so Gmail delivers it)
-  RESEND_FROM=optional sender, default "Colleague Connect for Dr. Anna Lee <onboarding@resend.dev>"
+  RESEND_FROM=optional sender, default "DocSpot for Dr. Anna Lee <onboarding@resend.dev>"
   SMTP_USER=the Gmail address that sends (fallback, needs an app password)
   SMTP_APP_PASSWORD=the 16-character Gmail app password
   DEMO_PATIENT_EMAIL=where every demo patient's consent email goes
@@ -112,11 +112,11 @@ def _email_ready():
 
 def _send_resend(to_addr, subject, text_body, html_body):
     """Resend's email API. Without a verified domain, it only delivers to the account owner's address."""
-    sender = os.getenv("RESEND_FROM", "Colleague Connect for Dr. Anna Lee <onboarding@resend.dev>")
+    sender = os.getenv("RESEND_FROM", "DocSpot for Dr. Anna Lee <onboarding@resend.dev>")
     data = json.dumps({"from": sender, "to": [to_addr], "subject": subject, "html": html_body, "text": text_body}).encode()
     req = urllib.request.Request("https://api.resend.com/emails", data=data, method="POST", headers={
         "Authorization": f"Bearer {os.getenv('RESEND_API_KEY')}", "Content-Type": "application/json",
-        "User-Agent": "colleague-connect/1.0"})
+        "User-Agent": "docspot/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=15) as res:
             return True, None
@@ -138,7 +138,7 @@ def _send_email(to_addr, subject, text_body, html_body):
         return False, "email not configured"
     msg = EmailMessage()
     msg["Subject"] = subject
-    msg["From"] = f"Colleague Connect for Dr. Anna Lee <{user}>"
+    msg["From"] = f"DocSpot for Dr. Anna Lee <{user}>"
     msg["To"] = to_addr
     msg.set_content(text_body)
     msg.add_alternative(html_body, subtype="html")
@@ -171,12 +171,12 @@ def send(c: ConsentRequest):
     text = (f"Hello,\n\n{s.name} ({s.practice}) would like to share your health information with {r.name} "
             f"to support your care in {r.specialty}.\n\nReview and sign the secure authorization form:\n{link}\n\n"
             f"For your privacy, the form asks for your date of birth before it opens. Nothing is shared unless you sign.\n\n"
-            f"Questions? Call {s.name}'s office{(' at ' + s.phone) if s.phone else ''}.\n\nColleague Connect, for {s.practice}")
+            f"Questions? Call {s.name}'s office{(' at ' + s.phone) if s.phone else ''}.\n\nDocSpot, for {s.practice}")
     body = (f"<p>Hello,</p><p>{_esc(s.name)} ({_esc(s.practice)}) would like to share your health information with "
             f"<b>{_esc(r.name)}</b> to support your care in <b>{_esc(r.specialty)}</b>.</p>"
             f"<p><a href=\"{link}\" style=\"background:#86A8FF;color:#0A1224;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:700\">Review and sign the form</a></p>"
             f"<p style=\"color:#555\">For your privacy, the form asks for your date of birth before it opens. Nothing is shared unless you sign.</p>"
-            f"<p style=\"color:#555\">Colleague Connect, for {_esc(s.practice)}</p>")
+            f"<p style=\"color:#555\">DocSpot, for {_esc(s.practice)}</p>")
     sent, err = _send_email(os.getenv("DEMO_PATIENT_EMAIL"), subject, text, body)
     CONSENTS[token] = {"req": c, "status": "sent", "created": datetime.now(), "signed": None, "tries": 0}
     return {"token": token, "link": link, "emailed": sent, "to": _mask(os.getenv("DEMO_PATIENT_EMAIL")) if sent else None, "error": err}
@@ -282,7 +282,7 @@ async function decide(kind){{
 
 
 PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Authorization form | Colleague Connect</title>
+<title>Authorization form | DocSpot</title>
 <style>
 body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:#F4F6FA;color:#1B2433;line-height:1.5}
 header{background:#08101E;color:#E8EEF7;padding:14px 20px;font-weight:800}header span{color:#91A0B6;font-weight:600}
@@ -295,5 +295,5 @@ button{font:inherit;font-weight:700;background:#2F5BD3;color:#fff;border:0;borde
 button.ghost{background:#fff;color:#1B2433;border:1px solid #C9D1DC}.row{display:flex;gap:8px;flex-wrap:wrap}
 .err{color:#B4452F;font-weight:600}.signed{background:#E7F7EF;padding:10px;border-radius:8px}
 footer{font-size:12px;color:#6B778A;margin-top:28px}
-</style></head><body><header>Colleague Connect <span>secure authorization</span></header>
+</style></head><body><header>DocSpot <span>secure authorization</span></header>
 <main>{{BODY}}<footer>Prototype for a hackathon demo. This form is modeled on HIPAA authorization requirements and has not been reviewed by a lawyer.</footer></main></body></html>"""

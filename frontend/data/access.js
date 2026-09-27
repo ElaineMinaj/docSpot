@@ -2,7 +2,7 @@
 // Fictional sample data for the telehealth and clinical-trial access feature.
 const ACCESS_DATA = {
  "_meta": {
-  "name": "Colleague Connect: telehealth and clinical-trial access sample data",
+  "name": "DocSpot: telehealth and clinical-trial access sample data",
   "purpose": "Demo data for finding specialists who can reach patients in hospital deserts through telehealth, or through clinical trials that support travel.",
   "disclaimer": "ALL RECORDS ARE FICTIONAL SAMPLE DATA for the HackGT demo. Physicians, practices, fax numbers, trials, and sponsors are made up. Trial IDs start with DEMO- so they can't be confused with real ClinicalTrials.gov NCT numbers. City names and coordinates are real Georgia locations.",
   "distance_note": "miles_to_nearest_in_person_specialist is straight-line distance to the nearest specialist in this file who is accepting new patients",

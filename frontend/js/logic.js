@@ -179,7 +179,7 @@ function draftText(f){
   if(f.type==='referral') return `${greet}\n\nI'd like to refer a patient for ${f.topic.toLowerCase()}${concern?` concerning ${concern}`:''}.\n\nIt would be great if you could please assess this concern and share recommendations for appropriate next steps. If you accept, the patient will be asked to consent before their details are shared with you.${sign}`;
   if(f.type==='collab') return `${greet}\n\nI'd value a brief discussion to coordinate care${concern?` regarding a patient with ${concern}`:''}.\n\nTopic: ${f.topic}. A brief reply by scanning the QR code on this fax, or by the fax-back form, is plenty. If you accept, the patient will be asked to consent before their details are shared with you.${sign}`;
   if(f.type==='question') return `${greet}\n\nA colleague question I thought you'd be well placed to answer:\n\n"${f.question}"${concern?`\n\nGeneral concern: ${concern}.`:''}\n\nA brief reply by scanning the QR code on this fax, or by the fax-back form, is plenty. If you accept, the patient will be asked to consent before their details are shared with you.${sign}`;
-  return `${greet}\n\nI'd like to connect with you on Colleague Connect, a secure way for physicians to share referrals and questions. It takes about a minute to accept, and there's no cost.${sign}`;
+  return `${greet}\n\nI'd like to connect with you on DocSpot, a secure way for physicians to share referrals and questions. It takes about a minute to accept, and there's no cost.${sign}`;
 }
 
 /* ---------- Privacy check (see api.js) ---------- */
@@ -240,7 +240,7 @@ function consentResult(r,status,signed){
     r.consent.status='signed'; r.consent.signed=signed;
     addEvent(r,`Patient signed the authorization${signed&&signed.name?` (${signed.name}, ${signed.at})`:''}${r.consent.simulated?' (simulated)':''}`);
     const released=consentFields(pt).filter(x=>r.consent.fields.includes(x.id)).map(x=>x.label.toLowerCase());
-    addEvent(r,`Approved information sent to ${p.name}: ${released.join(', ')}. Colleague Connect's part is complete`);
+    addEvent(r,`Approved information sent to ${p.name}: ${released.join(', ')}. DocSpot's part is complete`);
     if(!pt.careTeam.includes(p.id)) pt.careTeam.push(p.id);
     log(consentMessage(r,'signed'),'good');
   } else {
