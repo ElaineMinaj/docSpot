@@ -361,6 +361,7 @@ function stepReview(f){
 }
 function privacyBox(f){
   const pv=f.privacy||{status:'checking'};
+  if(pv.mode==='skipped') return '<div id="privacy-box" hidden></div>';
   const head=mode=>`<div class="pcheck-head"><b>Privacy check</b><span class="ai">${esc(PRIVACY_LABEL[mode]||'AI privacy check')}</span></div>`;
   if(pv.status==='checking') return `<div id="privacy-box" class="pcheck" aria-live="polite">${head({ai:'ai',patterns:'patterns',off:'offline'}[AI.status])}<p class="meta" style="margin:0">Checking the draft for patient identifiers and clinical details that cannot be shared by fax…</p></div>`;
   if(!pv.flags.length) return `<div id="privacy-box" class="pcheck ok" aria-live="polite">${head(pv.mode)}<p style="margin:0">No patient identifiers or prohibited clinical details found.</p></div>`;

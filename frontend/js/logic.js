@@ -195,6 +195,7 @@ const privacyClear = f => !!f.privacy&&f.privacy.status==='done'&&f.privacy.chec
 const FLAG_KIND = {identifier:'patient identifier', contact:'contact detail', unapproved:'unapproved clinical detail', ai:'other detail'};
 function privacyAudit(r,pv){
   if(!pv||pv.status!=='done') return;
+  if(pv.mode==='skipped'){ addEvent(r,'Privacy check not applied (clinical question)'); return; }
   // The audit trail records what kind of item was flagged, not the flagged text itself.
   const kinds=[...new Set(pv.flags.map(x=>FLAG_KIND[x.kind]||'other detail'))];
   addEvent(r,`${PRIVACY_LABEL[pv.mode]}: ${pv.flags.length?`flagged ${pv.flags.length} ${pv.flags.length===1?'item':'items'} (${kinds.join(', ')})`:'no issues found'}`);

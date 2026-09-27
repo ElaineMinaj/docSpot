@@ -32,6 +32,8 @@ function runPrivacyCheck(delay){
   const f=S.flow; if(!f||!f.to) return;
   clearTimeout(privacyTimer);
   const seq=++privacySeq;
+  // Clinical questions skip the privacy check (a team decision). The skip is noted in the audit trail.
+  if(f.type==='question'){ f.privacy={status:'done',flags:[],mode:'skipped',checkedText:f.text}; f.approved=false; updatePrivacyUI(); return; }
   f.privacy={status:'checking',flags:[],mode:null}; f.approved=false;
   updatePrivacyUI();
   privacyTimer=setTimeout(async()=>{
